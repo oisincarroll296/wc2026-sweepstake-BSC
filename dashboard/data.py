@@ -632,6 +632,60 @@ def get_insurance_overview() -> dict:
     return {"t1_status": t1_status, "holders": holders}
 
 
+@st.cache_data(ttl=300)
+def get_config() -> dict:
+    """Load config.yaml from project root."""
+    import yaml
+    p = _ROOT / "config.yaml"
+    if not p.exists():
+        return {}
+    try:
+        return yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+
+
+def get_addon_cost(purchase_type: str) -> float:
+    """Return the configured cost of a purchase type (0 for BuyIn, unknown types)."""
+    cfg = get_config()
+    costs = cfg.get("sweepstake", {}).get("addon_costs", {})
+    return float(costs.get(purchase_type, 0))
+
+
+def get_budget_per_player() -> float:
+    """Return the configured starting budget per player."""
+    cfg = get_config()
+    return float(cfg.get("sweepstake", {}).get("budget_per_player", 0))
+
+
+def get_player_budget_remaining(player: str) -> float:
+    """Return how much add-on budget a player has left."""
+    budget = get_budget_per_player()
+    if budget <= 0:
+        return 0.0
+    purchases = get_purchases()
+    if purchases.empty:
+        return budget
+    player_rows = purchases[purchases["Player"] == player]
+    spent = float(player_rows["PurchaseType"].map(get_addon_cost).sum())
+    return budget - spent
+
+
+def get_all_player_budgets() -> dict[str, dict]:
+    """Return budget summary for all players: {player: {budget, spent, remaining}}."""
+    budget = get_budget_per_player()
+    participants = get_participants()
+    result = {}
+    for p in participants:
+        spent = budget - get_player_budget_remaining(p)
+        result[p] = {
+            "budget":    budget,
+            "spent":     spent,
+            "remaining": budget - spent,
+        }
+    return result
+
+
 DEADLINE_LABELS: dict[str, str] = {
     "prediction_lock":           "Prediction Lock",
     "buy_in_deadline":           "Buy-In Deadline (before last group game)",

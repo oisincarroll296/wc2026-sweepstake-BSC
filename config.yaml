@@ -1,15 +1,29 @@
 sweepstake:
+  # Set to the number of players in your sweepstake.
+  # teams_per_tier is computed automatically: max(1, round(24 / participants))
+  # e.g. 13 players → 2 per tier (8 teams each)
+  #       6 players → 4 per tier (16 teams each)
+  #      24 players → 1 per tier (4 teams each)
   participants: 13
-  teams_per_tier: 2
-  total_tiers: 4
+
+  # Budget each player receives to spend on add-ons (in the currency of your choice).
+  # Set to 0 to disable budget tracking.
+  budget_per_player: 10
+
+  # Cost of each add-on purchase type (deducted from budget).
+  # BuyIn is NOT deducted from the add-on budget.
+  addon_costs:
+    PredictionPack: 5
+    Mulligan: 3
+    NinthTeam: 3
+    Resurrection: 5
+    Insurance: 2
+
   balance_threshold: 20
   max_balance_iterations: 1000
 
 scoring:
   strength_formula: "101 - fifa_rank"
-  # Pool: each of 12 teams per tier appears twice (24 slots)
-  # + 2 extras (position 1 and position 12 in each tier) = 26 per pool
-  # 13 participants x 2 teams per tier = 26 draws per tier
 
 colors:
   header_bg: [13, 27, 42]

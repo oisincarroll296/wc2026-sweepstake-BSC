@@ -200,11 +200,15 @@ with tabs[1]:
     st.caption("Record a payment received via the Shared Revolut Pocket.")
 
     from src.competition import PRICES as _PRICES
+    from dashboard.data import (
+        get_participants as _get_parts, get_budget_per_player,
+        get_player_budget_remaining, get_addon_cost,
+    )
     _price_labels = {k: f"{k}  (€{int(v)})" for k, v in _PRICES.items()}
+    _budget_enabled = get_budget_per_player() > 0
 
     with st.form("add_purchase"):
-        from dashboard.data import get_participants
-        players = get_participants() or []
+        players = _get_parts() or []
         add_player = st.selectbox("Player", players or ["—"])
         add_type   = st.selectbox("Type", list(_price_labels.keys()), format_func=lambda k: _price_labels[k])
         add_ref    = st.text_input("Payment Reference (optional)", placeholder="e.g. Oisin - BUY IN")
@@ -231,7 +235,36 @@ with tabs[1]:
             except Exception as exc:
                 st.error(f"Error: {exc}")
 
+    # Budget info for selected player (outside form so it refreshes live)
+    if _budget_enabled and players:
+        _sel_player = players[0] if players else None
+        if _sel_player:
+            _remaining = get_player_budget_remaining(_sel_player)
+            _total_budget = get_budget_per_player()
+            _spent = _total_budget - _remaining
+            _col1, _col2, _col3 = st.columns(3)
+            _col1.metric("Add-on Budget", f"€{int(_total_budget)}")
+            _col2.metric("Spent", f"€{_spent:.0f}")
+            _col3.metric("Remaining", f"€{_remaining:.0f}",
+                         delta=f"€{_remaining:.0f}",
+                         delta_color="normal" if _remaining >= 0 else "inverse")
+
     st.divider()
+
+    # Budget overview table
+    if _budget_enabled:
+        st.subheader("Budget Overview")
+        from dashboard.data import get_all_player_budgets
+        _budgets = get_all_player_budgets()
+        if _budgets:
+            _brows = [
+                {"Player": p, "Budget": f"€{int(d['budget'])}",
+                 "Spent": f"€{d['spent']:.0f}", "Remaining": f"€{d['remaining']:.0f}",
+                 "Status": "⚠️ Over" if d['remaining'] < 0 else ("✓ OK" if d['spent'] > 0 else "—")}
+                for p, d in sorted(_budgets.items())
+            ]
+            st.dataframe(pd.DataFrame(_brows), use_container_width=True, hide_index=True)
+        st.divider()
 
     # Current purchase log
     st.subheader("Purchase Log")

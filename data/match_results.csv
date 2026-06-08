@@ -1,1 +1,1 @@
-match_number,home_goals,away_goals,extra_time,penalty_winner,comeback_home,comeback_away
+MatchNumber,HomeTeam,AwayTeam,HomeGoals,AwayGoals,Outcome,PenaltyShootout,PenaltyWinner,ComebackWin,Timestamp
