@@ -1,0 +1,21 @@
+sweepstake:
+  participants: 13
+  teams_per_tier: 2
+  total_tiers: 4
+  balance_threshold: 20
+  max_balance_iterations: 1000
+
+scoring:
+  strength_formula: "101 - fifa_rank"
+  # Pool: each of 12 teams per tier appears twice (24 slots)
+  # + 2 extras (position 1 and position 12 in each tier) = 26 per pool
+  # 13 participants x 2 teams per tier = 26 draws per tier
+
+colors:
+  header_bg: [13, 27, 42]
+  header_fg: [212, 160, 23]
+  tier_1: [16, 90, 172]
+  tier_2: [21, 128, 61]
+  tier_3: [161, 98, 7]
+  tier_4: [185, 28, 28]
+  score_bg: [30, 41, 59]

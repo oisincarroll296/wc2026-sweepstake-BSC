@@ -1,0 +1,47 @@
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# ── Virtual environment ──────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+
+# ── Streamlit secrets ────────────────────────────────────────────────────────
+.streamlit/secrets.toml
+
+# ── Personal data ─────────────────────────────────────────────────────────────
+# Private repo — data files ARE committed so Streamlit Cloud can read them.
+# Operational files that don't need to be on Cloud are still excluded below.
+data/payment_ledger.csv
+data/*_lock.txt
+simulate_sf_stage.py
+
+# ── Claude Code local settings ───────────────────────────────────────────────
+.claude/
+
+# ── Generated exports ────────────────────────────────────────────────────────
+exports/
+
+# ── Simulation results (generated, can be large) ────────────────────────────
+simulations/results/
+
+# ── Streamlit run logs ───────────────────────────────────────────────────────
+streamlit_out.txt
+streamlit_err.txt
+
+# ── OS files ─────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE ──────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.suo
+*.user

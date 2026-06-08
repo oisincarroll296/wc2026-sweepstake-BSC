@@ -1,0 +1,200 @@
+"""Rules — official competition rules and scoring system."""
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+import streamlit as st
+
+from dashboard.components.ui import page_header
+
+page_header("Rules", "Official competition rules and scoring system")
+
+tab_scoring, tab_purchases, tab_captains, tab_prizes, tab_tiebreakers, tab_full = st.tabs([
+    "⚽ Scoring", "🛒 Purchases", "🎖️ Captains", "🏆 Prizes", "⚖️ Tiebreakers", "📄 Full Rules",
+])
+
+# ── SCORING ───────────────────────────────────────────────────────────────────
+with tab_scoring:
+    st.subheader("Match Events")
+    st.markdown("""
+| Event | Points |
+|---|---|
+| Goal Scored | +1 |
+| Clean Sheet | +2 |
+| Penalty Shootout Win | +3 |
+| Comeback Win | +3 |
+| Group Winner | +3 |
+""")
+    st.caption("**Comeback Win**: won in normal or extra time after going behind. Penalty wins don't count as comebacks.")
+
+    st.subheader("Tournament Progression")
+    st.caption("Bonuses are cumulative — a team that wins the tournament earns all stage bonuses.")
+    st.markdown("""
+| Round | Tier 1 | Tier 2 | Tier 3 | Tier 4 |
+|---|---|---|---|---|
+| Round of 16 | +2 | +4 | +8 | +12 |
+| Quarter Final | +4 | +8 | +15 | +25 |
+| Semi Final | +8 | +12 | +20 | +30 |
+| Final | +12 | +18 | +32 | +45 |
+| Winner | +20 | +28 | +46 | +65 |
+""")
+
+    with st.expander("Example: Tier 3 team wins the World Cup"):
+        st.markdown("8 + 15 + 20 + 32 + 46 = **121 progression points**, plus all match stats on top.")
+
+# ── PURCHASES ─────────────────────────────────────────────────────────────────
+with tab_purchases:
+    st.markdown(
+        '<div style="background:#1A2535;border:1px solid #2A3A4A;border-radius:8px;'
+        'padding:0.85rem 1.1rem;margin-bottom:1.1rem">'
+        '<div style="color:#D4A017;font-weight:700;font-size:0.92rem;margin-bottom:0.45rem">'
+        '💳 How to Buy an Add-On</div>'
+        '<div style="color:#E5E7EB;font-size:0.84rem;line-height:1.65">'
+        '1. Send the money to the <strong style="color:#D4A017">Shared Revolut Pocket</strong> '
+        'and include what you\'re buying in the transaction message<br>'
+        '2. <strong>Ninth Team</strong> &amp; <strong>Resurrection</strong> — teams are randomly drawn, '
+        'no selection needed<br>'
+        '3. <strong>Prediction Pack</strong> — send your picks (World Cup winner, Golden Boot, Dark Horse) '
+        'in a separate message<br>'
+        '4. <strong>Captains</strong> — send your Pre-Tournament and Knockout captain picks separately'
+        '</div></div>',
+        unsafe_allow_html=True,
+    )
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown(
+            '<div class="card"><h4 style="color:#D4A017;margin:0">Buy In — €5</h4>'
+            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.4rem 0 0">'
+            'Entry into the competition. Required to receive prizes. '
+            'You still appear on the Overall Leaderboard without it, but are excluded from prize money.</p></div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            '<div class="card"><h4 style="color:#D4A017;margin:0">Prediction Pack — €5</h4>'
+            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.4rem 0 0">'
+            'Unlocks three predictions: World Cup Winner (+30 pts), '
+            'Golden Boot (+25 pts), and a Dark Horse pick (cumulative bonuses up to +135 pts). '
+            'Lock: 1 hour before opening match.</p></div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            '<div class="card"><h4 style="color:#D4A017;margin:0">Mulligan — €3</h4>'
+            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.4rem 0 0">'
+            'Complete redraw of all 8 teams before the tournament starts. '
+            'Must satisfy all allocation rules. Multiple allowed per player. '
+            'All mulligans processed in batches depending on how many are bought.</p></div>',
+            unsafe_allow_html=True,
+        )
+
+    with col2:
+        st.markdown(
+            '<div class="card"><h4 style="color:#D4A017;margin:0">Insurance — €2</h4>'
+            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.4rem 0 0">'
+            'If either of your original Tier 1 teams is eliminated in the Group Stage, '
+            'you receive <strong>+25 points</strong>. Triggers for each team knocked out. '
+            'Round of 16 elimination does not qualify.</p></div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            '<div class="card"><h4 style="color:#D4A017;margin:0">Ninth Team — €3</h4>'
+            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.4rem 0 0">'
+            'After the Group Stage, receive one random surviving team you don\'t already own. '
+            'Added to your roster for knockout rounds only. '
+            'Can be selected as Knockout Captain.</p></div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            '<div class="card"><h4 style="color:#D4A017;margin:0">Resurrection — €5</h4>'
+            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.4rem 0 0">'
+            'Replace one group-eliminated team with a surviving team of the same tier. '
+            'Replacement earns knockout points only. Maximum one per player.</p></div>',
+            unsafe_allow_html=True,
+        )
+
+    st.divider()
+    st.subheader("Dark Horse Rules")
+    st.markdown("""
+- Must be a **Tier 3 or Tier 4** team
+- Cannot be a team you already own
+
+| Achievement | Bonus |
+|---|---|
+| Reaches Quarter Final | +15 |
+| Reaches Semi Final | +30 |
+| Reaches Final | +40 |
+| Wins Tournament | +50 |
+
+Bonuses are cumulative. A Dark Horse that reaches the Final earns **15 + 30 + 40 = 85 pts**. World Cup winner earns **135 pts**.
+""")
+
+# ── CAPTAINS ──────────────────────────────────────────────────────────────────
+with tab_captains:
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown(
+            '<div class="card-gold"><h4 style="color:#D4A017;margin:0">Pre-Tournament Captain</h4>'
+            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.5rem 0 0">Free · Must be one of your original 8 teams · '
+            'Selected before the opening match</p>'
+            '<p style="color:#F5F5F5;margin:0.5rem 0 0">'
+            'That team earns <strong>1.5× all points</strong> throughout the entire tournament '
+            '(+50% bonus added).</p></div>',
+            unsafe_allow_html=True,
+        )
+    with col2:
+        st.markdown(
+            '<div class="card-gold"><h4 style="color:#D4A017;margin:0">Knockout Captain</h4>'
+            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.5rem 0 0">Free · Any surviving team you own · '
+            'Selected before the Round of 16</p>'
+            '<p style="color:#F5F5F5;margin:0.5rem 0 0">'
+            'That team earns <strong>1.5× knockout-stage points</strong> from Round of 16 onward '
+            '(+50% bonus added). Cannot be the same team as your Pre-Tournament Captain.</p></div>',
+            unsafe_allow_html=True,
+        )
+
+    st.info("Captain selections remain hidden until the relevant deadline has passed. A Resurrection replacement does NOT inherit captain status from the team it replaces.")
+
+# ── PRIZES ────────────────────────────────────────────────────────────────────
+with tab_prizes:
+    st.markdown("100% of all money collected goes into the prize pool.")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.markdown('<div class="card-gold" style="text-align:center"><h2 style="color:#D4A017;margin:0">🥇 50%</h2><p style="color:#9CA3AF;margin:0">1st Place</p></div>', unsafe_allow_html=True)
+    with c2:
+        st.markdown('<div class="card" style="text-align:center"><h2 style="color:#C0C0C0;margin:0">🥈 30%</h2><p style="color:#9CA3AF;margin:0">2nd Place</p></div>', unsafe_allow_html=True)
+    with c3:
+        st.markdown('<div class="card" style="text-align:center"><h2 style="color:#CD7F32;margin:0">🥉 20%</h2><p style="color:#9CA3AF;margin:0">3rd Place</p></div>', unsafe_allow_html=True)
+
+    st.divider()
+    st.markdown("""
+**Prize Leaderboard** — Paid players only. These are the standings that determine prize money.
+
+**Overall Leaderboard** — All 13 players. Players without a Buy In are shown greyed out and cannot win prizes.
+""")
+
+# ── TIEBREAKERS ───────────────────────────────────────────────────────────────
+with tab_tiebreakers:
+    st.markdown("Applied in order when two or more players finish level on points:")
+    for i, (title, desc) in enumerate([
+        ("Most Total Goals Scored", "Across all owned teams throughout the tournament."),
+        ("Most Teams Reaching QF+", "Count of owned teams that reached the Quarter Final or better."),
+        ("Lowest Original Portfolio Strength", "Based on the original draw only. Ninth Teams and Resurrection replacements ignored."),
+        ("Random Draw", "Conducted with a logged, reproducible random seed for full transparency."),
+    ], 1):
+        st.markdown(
+            f'<div class="card" style="display:flex;gap:1rem;align-items:flex-start">'
+            f'<span style="color:#D4A017;font-size:1.4rem;font-weight:700;min-width:1.5rem">{i}</span>'
+            f'<div><p style="color:#F5F5F5;font-weight:600;margin:0">{title}</p>'
+            f'<p style="color:#9CA3AF;font-size:0.85rem;margin:0.15rem 0 0">{desc}</p></div></div>',
+            unsafe_allow_html=True,
+        )
+
+# ── FULL RULES ────────────────────────────────────────────────────────────────
+with tab_full:
+    _ROOT = Path(__file__).parent.parent.parent
+    _RULES = _ROOT / "RULES.md"
+    if _RULES.exists():
+        with st.expander("View full rules document", expanded=False):
+            st.markdown(_RULES.read_text(encoding="utf-8"))
+    else:
+        st.warning("Rules file not found.")

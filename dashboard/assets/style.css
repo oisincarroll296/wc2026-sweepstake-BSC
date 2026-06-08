@@ -1,0 +1,213 @@
+/* ── Global ── */
+:root {
+    --gold:   #D4A017;
+    --navy:   #0D1B2A;
+    --navy2:  #1E2937;
+    --white:  #F5F5F5;
+    --t1:     #105AAC;
+    --t2:     #15803D;
+    --t3:     #A16207;
+    --t4:     #B91C1C;
+}
+
+/* Background */
+.stApp { background-color: #0D1B2A; }
+
+/* Sidebar */
+[data-testid="stSidebar"] {
+    background-color: #111F30;
+    border-right: 1px solid #2A3A4A;
+}
+[data-testid="stSidebar"] .stSelectbox label,
+[data-testid="stSidebar"] p { color: #D4A017 !important; }
+
+/* Main content area */
+.block-container { padding: 1.5rem 1rem 3rem; max-width: 1100px; }
+
+/* Headers */
+h1 { color: #D4A017 !important; font-size: 1.7rem !important; font-weight: 700 !important; }
+h2 { color: #F5F5F5 !important; font-size: 1.25rem !important; }
+h3 { color: #D4A017 !important; font-size: 1.05rem !important; }
+
+/* Metric cards */
+[data-testid="metric-container"] {
+    background: #1E2937;
+    border: 1px solid #2A3A4A;
+    border-radius: 8px;
+    padding: 0.8rem;
+}
+[data-testid="metric-container"] label { color: #D4A017 !important; font-size: 0.75rem !important; }
+[data-testid="metric-container"] [data-testid="stMetricValue"] { color: #F5F5F5 !important; font-size: 1.4rem !important; }
+
+/* Dataframe */
+[data-testid="stDataFrame"] { border-radius: 8px; overflow: hidden; }
+
+/* Buttons */
+.stButton > button {
+    background: #D4A017;
+    color: #0D1B2A;
+    font-weight: 700;
+    border: none;
+    border-radius: 6px;
+}
+.stButton > button:hover { background: #B8880F; color: #0D1B2A; }
+
+/* Info/warning/error boxes */
+[data-testid="stAlert"] { border-radius: 6px; }
+
+/* Tabs */
+[data-testid="stTab"] button { color: #D4A017 !important; }
+
+/* Text input */
+input, textarea { background: #1E2937 !important; color: #F5F5F5 !important; border-color: #2A3A4A !important; }
+
+/* Selectbox */
+[data-testid="stSelectbox"] { color: #F5F5F5; }
+
+/* Section divider */
+hr { border-color: #2A3A4A !important; }
+
+/* ── Mobile ── */
+@media (max-width: 768px) {
+    /* Tighter container — top must clear the fixed Streamlit toolbar (~3.5rem) */
+    .block-container {
+        padding-top: 4rem !important;
+        padding-left: 0.4rem !important;
+        padding-right: 0.4rem !important;
+        padding-bottom: 2rem !important;
+        max-width: 100% !important;
+    }
+
+    /* Header sizes */
+    h1 { font-size: 1.25rem !important; }
+    h2 { font-size: 1.1rem !important; }
+    h3 { font-size: 1rem !important; }
+
+    /* Stack ALL Streamlit columns */
+    [data-testid="stHorizontalBlock"] {
+        flex-wrap: wrap !important;
+        gap: 0.25rem !important;
+    }
+    [data-testid="stColumn"] {
+        min-width: 100% !important;
+        flex: 1 1 100% !important;
+    }
+
+    /* Metric cards */
+    [data-testid="metric-container"] {
+        margin-bottom: 0.4rem !important;
+        padding: 0.6rem !important;
+    }
+    [data-testid="stMetricValue"] { font-size: 1.2rem !important; }
+
+    /* Tabs — scroll horizontally so they don't wrap or overflow */
+    [data-testid="stTabs"] > div:first-child {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+    button[data-baseweb="tab"] {
+        white-space: nowrap;
+        font-size: 0.78rem !important;
+        padding: 0.4rem 0.6rem !important;
+    }
+
+    /* Buttons — full width, easy to tap */
+    .stButton > button {
+        width: 100% !important;
+        padding: 0.7rem !important;
+        font-size: 0.95rem !important;
+        margin-bottom: 0.4rem !important;
+    }
+
+    /* CRITICAL: prevent iOS from zooming on input focus (needs ≥ 16px) */
+    input, textarea, select,
+    [data-testid="stSelectbox"] select,
+    [data-baseweb="select"] input { font-size: 16px !important; }
+
+    /* Tables — horizontal scroll on narrow screens */
+    [data-testid="stDataFrame"] > div { overflow-x: auto !important; }
+
+    /* Radio row — wrap options */
+    [data-testid="stRadio"] > div { flex-wrap: wrap !important; }
+
+    /* Forms — less padding */
+    [data-testid="stForm"] { padding: 0.5rem !important; }
+}
+
+/* Extra-small screens: iPhone SE, Galaxy A series, etc. */
+@media (max-width: 400px) {
+    .block-container {
+        padding-top: 4rem !important;
+        padding-left: 0.25rem !important;
+        padding-right: 0.25rem !important;
+        padding-bottom: 1.5rem !important;
+    }
+    h1 { font-size: 1.1rem !important; }
+    [data-testid="stMetricValue"] { font-size: 1rem !important; }
+    [data-testid="metric-container"] label { font-size: 0.65rem !important; }
+}
+
+/* ── Custom classes ── */
+.gold-badge {
+    background: linear-gradient(135deg,#D4A017,#A67C00);
+    color: #0D1B2A; padding: 2px 10px; border-radius: 12px;
+    font-weight:700; font-size:0.8rem; display:inline-block;
+}
+.silver-badge {
+    background: linear-gradient(135deg,#C0C0C0,#909090);
+    color: #0D1B2A; padding: 2px 10px; border-radius: 12px;
+    font-weight:700; font-size:0.8rem; display:inline-block;
+}
+.bronze-badge {
+    background: linear-gradient(135deg,#CD7F32,#9E5F20);
+    color: #fff; padding: 2px 10px; border-radius: 12px;
+    font-weight:700; font-size:0.8rem; display:inline-block;
+}
+.unpaid-tag {
+    color: #9CA3AF; font-size: 0.75rem;
+    border: 1px solid #4B5563; border-radius: 10px;
+    padding: 1px 8px; display:inline-block;
+}
+.paid-tag {
+    color: #6EE7B7; font-size: 0.75rem;
+    border: 1px solid #059669; border-radius: 10px;
+    padding: 1px 8px; display:inline-block;
+}
+.lock-banner {
+    background: #7C3AED22; border: 1px solid #7C3AED;
+    border-radius: 8px; padding: 1rem; text-align:center;
+    color: #C4B5FD; font-size: 1rem; margin: 1rem 0;
+}
+.tier1-dot { color: #105AAC; }
+.tier2-dot { color: #15803D; }
+.tier3-dot { color: #A16207; }
+.tier4-dot { color: #B91C1C; }
+.card {
+    background: #1E2937; border: 1px solid #2A3A4A;
+    border-radius: 10px; padding: 1rem; margin-bottom: 0.75rem;
+}
+.card-gold {
+    background: #1E2937; border: 1px solid #D4A017;
+    border-radius: 10px; padding: 1rem; margin-bottom: 0.75rem;
+}
+
+/* Player quick-link buttons (home page) */
+.player-link-btn {
+    display: inline-block;
+    padding: 0.35rem 0.75rem;
+    background: #1E2937;
+    border: 1px solid #2A3A4A;
+    border-radius: 6px;
+    color: #F5F5F5 !important;
+    text-decoration: none !important;
+    font-size: 0.82rem;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: border-color 0.15s, background 0.15s;
+}
+.player-link-btn:hover {
+    border-color: #D4A017;
+    background: #253547;
+    color: #D4A017 !important;
+}

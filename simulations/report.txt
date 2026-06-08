@@ -1,0 +1,80 @@
+========================================================================
+WC 2026 SWEEPSTAKE — SCORING FAIRNESS REPORT
+20 simulations · 13 participants · mixed purchase profiles
+========================================================================
+
+── 1. TOURNAMENT OUTCOMES ──────────────────────────────────────────
+   T1 World Cup winner:  10 / 20 simulations (50%)
+   T2 World Cup winner:   6 / 20 simulations (30%)
+   T3 World Cup winner:   2 / 20 simulations (10%)
+   T4 World Cup winner:   2 / 20 simulations (10%)
+
+   Most common WC winner: Germany (3x)
+
+── 2. SCORE DISTRIBUTION ───────────────────────────────────────────
+   Avg 1st place score   : 396.2 pts
+   Avg last place score  : 145.6 pts
+   Avg score range       : 250.6 pts  (min 160  max 444)
+   Avg within-sim std dev: 72.6 pts
+   Avg Gini coefficient  : 0.160  (0=equal, 0.15+=high inequality)
+
+── 3. AVERAGE POINTS PER TEAM BY TIER ─────────────────────────────
+   T1 avg pts per team: 28.8
+   T2 avg pts per team: 27.9
+   T3 avg pts per team: 25.7
+   T4 avg pts per team: 16.5
+
+   T1 / T4 ratio per team: 1.8x  (T1 earns 1.8x more than T4 on average)
+
+── 4. BONUS COMPONENT ANALYSIS ─────────────────────────────────────
+   Avg total score       : 247.4 pts
+   Avg base (match stats): 216.6 pts  (88% of total)
+   Avg captain bonus     : 18.1 pts  (7% of total)
+   Avg insurance bonus   : 2.9 pts  (1% of total)
+   Avg prediction bonus  : 9.8 pts  (4% of total)
+
+── 5. PURCHASE VALUE ANALYSIS ──────────────────────────────────────
+   Prediction Pack (€5)          buyers avg: 250.4  non-buyers: 240.1  uplift: +10.3 pts
+   Insurance (€2)                buyers avg: 257.0  non-buyers: 235.5  uplift: +21.4 pts
+   Ninth Team (€3)               buyers avg: 255.5  non-buyers: 240.3  uplift: +15.2 pts
+   Resurrection (€5)             buyers avg: 277.0  non-buyers: 238.3  uplift: +38.7 pts
+
+── 6. INSURANCE PAYOFF ANALYSIS ────────────────────────────────────
+   Insurance payoff rate : 21% of insurance buyers received the bonus
+   Insurance bonus value : +25 pts when it pays off
+   Insurance cost        : €2
+
+── 7. CAPTAIN MULTIPLIER ANALYSIS ──────────────────────────────────
+   Captain bonus averages 18.1 pts = 8% of base points
+   Captain multiplier     : 1.5× (adds 0.5× team pts)
+
+── 8. COMPETITIVE BALANCE ──────────────────────────────────────────
+   Score range verdict   : VERY WIDE — outcomes are highly determined by draw luck
+   Avg range             : 251 pts  (ideal for a sweepstake: 50–100)
+
+── 9. FAIRNESS VERDICT & RECOMMENDATIONS ───────────────────────────
+
+   Issue 1: Score range of 251 pts is wide. Outcomes are largely determined by
+   draw luck (which T1 teams win the WC). Consider adding a 'survivor bonus'
+   for all teams reaching R16 (+2 pts) to tighten the pack.
+
+── 10. SUMMARY STATISTICS TABLE ────────────────────────────────────
+   Metric                                   Value
+   ---------------------------------------------
+   Avg 1st place score                      396.2
+   Avg last place score                     145.6
+   Avg score range                          250.6
+   Avg std deviation                         72.6
+   Avg Gini coefficient                     0.160
+   Avg pts/team T1                           28.8
+   Avg pts/team T2                           27.9
+   Avg pts/team T3                           25.7
+   Avg pts/team T4                           16.5
+   Avg captain bonus                         18.1
+   Insurance payoff rate                      21%
+   T1 WC wins                               10/20
+   T2 WC wins                                6/20
+   T3 WC wins                                2/20
+   T4 WC wins                                2/20
+
+========================================================================
