@@ -36,13 +36,11 @@ def _refresh():
 
 
 def _save_purchases(df: pd.DataFrame):
-    from src.competition import atomic_csv_write
-    atomic_csv_write(df, DATA / "purchases.csv")
+    df.to_csv(DATA / "purchases.csv", index=False)
 
 
 def _save_statuses(df: pd.DataFrame):
-    from src.competition import atomic_csv_write
-    atomic_csv_write(df, DATA / "players.csv")
+    df.to_csv(DATA / "players.csv", index=False)
 
 
 # ── Tabs ──────────────────────────────────────────────────────────────────
