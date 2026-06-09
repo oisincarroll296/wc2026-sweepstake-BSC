@@ -11,31 +11,12 @@ import yaml
 import streamlit as st
 import pandas as pd
 
-import os
-import tempfile
-
 from dashboard.data import get_participants, get_purchases, get_assignments, get_teams, get_tier_map
 from dashboard.components.ui import page_header
 from src.competition import (
     add_purchase, load_purchases, load_player_status, PURCHASES_PATH,
 )
 from src.event_engine import process_pending_purchases
-
-
-def _atomic_csv_write(df: pd.DataFrame, path: Path) -> None:
-    """Write DataFrame to CSV atomically via temp-file + os.replace."""
-    path = Path(path)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
-    try:
-        os.close(fd)
-        df.to_csv(tmp, index=False)
-        os.replace(tmp, path)
-    except Exception:
-        try:
-            os.unlink(tmp)
-        except Exception:
-            pass
-        raise
 
 _ROOT = Path(__file__).parent.parent.parent
 _PLAYERS_PATH = _ROOT / "data" / "players.csv"
@@ -113,20 +94,20 @@ ADDONS = [
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 def _commit_purchase(player: str, pt: str, selection: str = "") -> None:
-    """Write purchase atomically, marking PAID if it's a BuyIn."""
+    """Write purchase to CSV and update player status."""
     ts       = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     all_p    = load_purchases()
     updated  = add_purchase(player, pt, reference="self-service",
                             purchases=all_p, timestamp=ts, selection=selection)
     statuses = load_player_status()
     updated, updated_statuses, _ = process_pending_purchases(updated, statuses)
-    _atomic_csv_write(updated, PURCHASES_PATH)
-    _atomic_csv_write(updated_statuses, _PLAYERS_PATH)
+    updated.to_csv(PURCHASES_PATH, index=False)
+    updated_statuses.to_csv(_PLAYERS_PATH, index=False)
     st.cache_data.clear()
 
 
 def _save_picks(player: str, picks: dict) -> None:
-    """Persist prediction picks into players.csv atomically."""
+    """Persist prediction picks into players.csv."""
     df = pd.read_csv(_PLAYERS_PATH, dtype=str).fillna("") if _PLAYERS_PATH.exists() else pd.DataFrame()
     if df.empty:
         return
@@ -135,7 +116,7 @@ def _save_picks(player: str, picks: dict) -> None:
         if col not in df.columns:
             df[col] = ""
         df.loc[mask, col] = val
-    _atomic_csv_write(df, _PLAYERS_PATH)
+    df.to_csv(_PLAYERS_PATH, index=False)
     st.cache_data.clear()
 
 
@@ -220,7 +201,12 @@ def _dlg_simple(pt: str, label: str, cost: int) -> None:
     st.caption("This will be recorded immediately and deducted from your budget.")
     c1, c2 = st.columns(2)
     if c1.button("Confirm", type="primary", use_container_width=True):
-        _commit_purchase(player, pt)
+        try:
+            _commit_purchase(player, pt)
+            st.toast(f"{label} purchased!", icon="✅")
+        except Exception as e:
+            st.error(f"Purchase failed: {e}")
+            return
         st.rerun()
     if c2.button("Cancel", use_container_width=True):
         st.rerun()
@@ -270,11 +256,16 @@ def _dlg_prediction_pack(cost: int) -> None:
     st.divider()
     ca, cb = st.columns(2)
     if ca.button("Buy & Save Picks", type="primary", use_container_width=True):
-        _commit_purchase(player, "PredictionPack")
-        _save_picks(player, {
-            "WorldCupWinner": wcw, "RunnerUp": ru, "BronzeMedal": bm,
-            "GoldenBoot": gb, "DarkHorse": dh, "FirstKnockedOut": fko,
-        })
+        try:
+            _commit_purchase(player, "PredictionPack")
+            _save_picks(player, {
+                "WorldCupWinner": wcw, "RunnerUp": ru, "BronzeMedal": bm,
+                "GoldenBoot": gb, "DarkHorse": dh, "FirstKnockedOut": fko,
+            })
+            st.toast("Prediction Pack purchased!", icon="✅")
+        except Exception as e:
+            st.error(f"Purchase failed: {e}")
+            return
         st.rerun()
     if cb.button("Cancel", use_container_width=True):
         st.rerun()
@@ -300,7 +291,12 @@ def _dlg_resurrection(cost: int) -> None:
     ca, cb = st.columns(2)
     disabled = eliminated_team == "— select —"
     if ca.button("Buy & Submit", type="primary", use_container_width=True, disabled=disabled):
-        _commit_purchase(player, "Resurrection", selection=eliminated_team)
+        try:
+            _commit_purchase(player, "Resurrection", selection=eliminated_team)
+            st.toast("Resurrection purchased!", icon="✅")
+        except Exception as e:
+            st.error(f"Purchase failed: {e}")
+            return
         st.rerun()
     if cb.button("Cancel", use_container_width=True):
         st.rerun()
