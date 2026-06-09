@@ -11,13 +11,31 @@ import yaml
 import streamlit as st
 import pandas as pd
 
+import os
+import tempfile
+
 from dashboard.data import get_participants, get_purchases, get_assignments, get_teams, get_tier_map
 from dashboard.components.ui import page_header
 from src.competition import (
-    add_purchase, load_purchases, load_player_status,
-    PURCHASES_PATH, atomic_csv_write,
+    add_purchase, load_purchases, load_player_status, PURCHASES_PATH,
 )
 from src.event_engine import process_pending_purchases
+
+
+def _atomic_csv_write(df: pd.DataFrame, path: Path) -> None:
+    """Write DataFrame to CSV atomically via temp-file + os.replace."""
+    path = Path(path)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    try:
+        os.close(fd)
+        df.to_csv(tmp, index=False)
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except Exception:
+            pass
+        raise
 
 _ROOT = Path(__file__).parent.parent.parent
 _PLAYERS_PATH = _ROOT / "data" / "players.csv"
@@ -102,8 +120,8 @@ def _commit_purchase(player: str, pt: str, selection: str = "") -> None:
                             purchases=all_p, timestamp=ts, selection=selection)
     statuses = load_player_status()
     updated, updated_statuses, _ = process_pending_purchases(updated, statuses)
-    atomic_csv_write(updated, PURCHASES_PATH)
-    atomic_csv_write(updated_statuses, _PLAYERS_PATH)
+    _atomic_csv_write(updated, PURCHASES_PATH)
+    _atomic_csv_write(updated_statuses, _PLAYERS_PATH)
     st.cache_data.clear()
 
 
@@ -117,7 +135,7 @@ def _save_picks(player: str, picks: dict) -> None:
         if col not in df.columns:
             df[col] = ""
         df.loc[mask, col] = val
-    atomic_csv_write(df, _PLAYERS_PATH)
+    _atomic_csv_write(df, _PLAYERS_PATH)
     st.cache_data.clear()
 
 
