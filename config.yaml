@@ -4,11 +4,11 @@ sweepstake:
   # e.g. 13 players → 2 per tier (8 teams each)
   #       6 players → 4 per tier (16 teams each)
   #      24 players → 1 per tier (4 teams each)
-  participants: 13
+  participants: 7
 
   # Budget each player receives to spend on add-ons (in the currency of your choice).
   # Set to 0 to disable budget tracking.
-  budget_per_player: 10
+  budget_per_player: 15
 
   # Cost of each add-on purchase type (deducted from budget).
   # BuyIn is NOT deducted from the add-on budget.
