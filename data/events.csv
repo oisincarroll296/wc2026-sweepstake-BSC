@@ -1,1 +1,2 @@
-EventType,Status,Timestamp,RandomSeed,Notes
+EventType,Status,Timestamp,RandomSeed,Notes,EventID,ScheduledTime,ExecutedTime
+INITIAL_DRAW,EXECUTED,,6,,1,2026-06-09T20:52:52+00:00,2026-06-09T20:52:52+00:00

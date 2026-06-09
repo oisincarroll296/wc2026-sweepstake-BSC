@@ -1,1 +1,2 @@
-Timestamp,Action,Details,Actor
+Timestamp,Action,Details,Actor,Event,Player,Result
+2026-06-09T20:52:52+00:00,DRAW_EXECUTED,,,INITIAL_DRAW,,6
