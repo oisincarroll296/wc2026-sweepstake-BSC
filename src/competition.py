@@ -1,6 +1,8 @@
 """Competition logic layer for World Cup 2026 Sweepstake."""
 
+import os
 import random
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -79,6 +81,22 @@ _NAME_TO_TYPE: dict[str, str] = {
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def atomic_csv_write(df: pd.DataFrame, path: "Path | str") -> None:
+    """Write a DataFrame to CSV atomically via temp-file + os.replace."""
+    path = Path(path)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    try:
+        os.close(fd)
+        df.to_csv(tmp, index=False)
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except Exception:
+            pass
+        raise
 
 
 def _safe_int(val: object) -> int:

@@ -9,13 +9,21 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import yaml
 import streamlit as st
+import pandas as pd
 
-from dashboard.data import get_participants, get_purchases
+from dashboard.data import get_participants, get_purchases, get_assignments, get_teams, get_tier_map
 from dashboard.components.ui import page_header
+from src.competition import (
+    add_purchase, load_purchases, load_player_status,
+    PURCHASES_PATH, atomic_csv_write,
+)
+from src.event_engine import process_pending_purchases
 
 _ROOT = Path(__file__).parent.parent.parent
+_PLAYERS_PATH = _ROOT / "data" / "players.csv"
 
 
+# ── Config ─────────────────────────────────────────────────────────────────
 def _load_config() -> dict:
     p = _ROOT / "config.yaml"
     if p.exists():
@@ -30,6 +38,7 @@ _cfg   = _load_config()
 _swp   = _cfg.get("sweepstake", {})
 BUDGET = int(_swp.get("budget_per_player", 0))
 COSTS: dict[str, int] = {k: int(v) for k, v in _swp.get("addon_costs", {}).items()}
+
 
 # ── Deadlines ──────────────────────────────────────────────────────────────
 _now = datetime.now(tz=timezone.utc)
@@ -63,7 +72,7 @@ def _open(pt: str) -> bool:
 ADDONS = [
     (
         "PredictionPack", "Prediction Pack",
-        "Pick your WC Winner, Golden Boot & Dark Horse for bonus prediction points.",
+        "Pick your WC Winner, Runner-Up, Bronze, Golden Boot, Dark Horse & First Knocked Out for bonus points.",
     ),
     (
         "Insurance", "Insurance",
@@ -75,13 +84,42 @@ ADDONS = [
     ),
     (
         "NinthTeam", "Ninth Team",
-        "Get a randomly drawn 9th team from surviving sides. Admin runs the draw after purchase.",
+        "Get a randomly drawn 9th team from surviving sides. Admin runs the draw after your purchase.",
     ),
     (
         "Resurrection", "Resurrection",
-        "Replace one eliminated team with a surviving same-tier team. Admin runs the draw after purchase.",
+        "Replace one eliminated team with a surviving same-tier team. Pick which team below — admin draws the replacement.",
     ),
 ]
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────
+def _commit_purchase(player: str, pt: str, selection: str = "") -> None:
+    """Write purchase atomically, marking PAID if it's a BuyIn."""
+    ts       = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    all_p    = load_purchases()
+    updated  = add_purchase(player, pt, reference="self-service",
+                            purchases=all_p, timestamp=ts, selection=selection)
+    statuses = load_player_status()
+    updated, updated_statuses, _ = process_pending_purchases(updated, statuses)
+    atomic_csv_write(updated, PURCHASES_PATH)
+    atomic_csv_write(updated_statuses, _PLAYERS_PATH)
+    st.cache_data.clear()
+
+
+def _save_picks(player: str, picks: dict) -> None:
+    """Persist prediction picks into players.csv atomically."""
+    df = pd.read_csv(_PLAYERS_PATH, dtype=str).fillna("") if _PLAYERS_PATH.exists() else pd.DataFrame()
+    if df.empty:
+        return
+    mask = df["Player"] == player
+    for col, val in picks.items():
+        if col not in df.columns:
+            df[col] = ""
+        df.loc[mask, col] = val
+    atomic_csv_write(df, _PLAYERS_PATH)
+    st.cache_data.clear()
+
 
 # ── Page ───────────────────────────────────────────────────────────────────
 page_header("Add-on Shop", "Buy add-ons for your sweepstake entry")
@@ -108,9 +146,8 @@ if player == "— select your name —":
     st.info("Select your name above to open your shop.")
     st.stop()
 
-st.query_params["player"] = player  # keep URL in sync
+st.query_params["player"] = player
 
-# Shareable link
 try:
     _host = st.context.headers.get("host", "localhost:8502")
 except Exception:
@@ -118,12 +155,21 @@ except Exception:
 with st.expander("Share my shop link"):
     st.code(f"http://{_host}/shop?player={_urlparse.quote(player)}", language=None)
 
-# ── Budget meter ──────────────────────────────────────────────────────────
-purchases = get_purchases()
+# ── Load data ──────────────────────────────────────────────────────────────
+purchases   = get_purchases()
+assignments = get_assignments()
+teams_df    = get_teams()
+tier_map    = get_tier_map()
+
 owned_types: set[str] = set()
 if not purchases.empty:
     owned_types = set(purchases.loc[purchases["Player"] == player, "PurchaseType"].tolist())
 
+player_teams = sorted(assignments.get(player, []))
+all_teams    = sorted(teams_df["Team"].tolist()) if not teams_df.empty else []
+t3_t4_teams  = sorted([t for t, ti in tier_map.items() if ti in (3, 4) and t not in player_teams])
+
+# ── Budget meter ──────────────────────────────────────────────────────────
 spent     = sum(COSTS.get(pt, 0) for pt in owned_types if pt != "BuyIn")
 remaining = BUDGET - spent
 
@@ -140,10 +186,105 @@ if BUDGET > 0:
         f'<div style="background:#0D1B2A;border-radius:4px;height:8px">'
         f'<div style="background:{bar_color};width:{pct}%;height:8px;border-radius:4px"></div>'
         f'</div>'
-        f'<div style="color:#6B7280;font-size:0.78rem;margin-top:0.35rem">€{spent} of €{BUDGET} budget spent</div>'
+        f'<div style="color:#6B7280;font-size:0.78rem;margin-top:0.35rem">'
+        f'€{spent} of €{BUDGET} budget spent</div>'
         f'</div>',
         unsafe_allow_html=True,
     )
+
+# ── Confirm dialogs ────────────────────────────────────────────────────────
+
+@st.dialog("Confirm Purchase")
+def _dlg_simple(pt: str, label: str, cost: int) -> None:
+    st.markdown(f"Buy **{label}** for **€{cost}**?")
+    st.caption("This will be recorded immediately and deducted from your budget.")
+    c1, c2 = st.columns(2)
+    if c1.button("Confirm", type="primary", use_container_width=True):
+        _commit_purchase(player, pt)
+        st.rerun()
+    if c2.button("Cancel", use_container_width=True):
+        st.rerun()
+
+
+@st.dialog("Prediction Pack — Enter Your Picks")
+def _dlg_prediction_pack(cost: int) -> None:
+    st.markdown(f"Enter your predictions below, then confirm your **€{cost}** purchase.")
+    st.caption("Picks are saved with your purchase and locked in immediately.")
+
+    # Pre-fill existing picks if any
+    existing: dict = {}
+    if _PLAYERS_PATH.exists():
+        _pdf = pd.read_csv(_PLAYERS_PATH, dtype=str).fillna("")
+        _row = _pdf[_pdf["Player"] == player]
+        if not _row.empty:
+            existing = _row.iloc[0].to_dict()
+
+    def _ev(col: str) -> str:
+        v = existing.get(col, "")
+        return str(v) if v and str(v) != "nan" else ""
+
+    opts_all  = [""] + all_teams
+    opts_t34  = [""] + t3_t4_teams
+
+    c1, c2 = st.columns(2)
+    with c1:
+        cur = _ev("WorldCupWinner")
+        wcw = st.selectbox("World Cup Winner", opts_all,
+                           index=opts_all.index(cur) if cur in opts_all else 0)
+        cur = _ev("BronzeMedal")
+        bm  = st.selectbox("Bronze Medal", opts_all,
+                           index=opts_all.index(cur) if cur in opts_all else 0)
+        gb  = st.text_input("Golden Boot (player name)", value=_ev("GoldenBoot"),
+                            placeholder="e.g. Mbappé")
+    with c2:
+        cur = _ev("RunnerUp")
+        ru  = st.selectbox("Runner-Up", opts_all,
+                           index=opts_all.index(cur) if cur in opts_all else 0)
+        cur = _ev("DarkHorse")
+        dh  = st.selectbox("Dark Horse (Tier 3/4, not your team)", opts_t34,
+                           index=opts_t34.index(cur) if cur in opts_t34 else 0)
+        cur = _ev("FirstKnockedOut")
+        fko = st.selectbox("First Knocked Out", opts_all,
+                           index=opts_all.index(cur) if cur in opts_all else 0)
+
+    st.divider()
+    ca, cb = st.columns(2)
+    if ca.button("Buy & Save Picks", type="primary", use_container_width=True):
+        _commit_purchase(player, "PredictionPack")
+        _save_picks(player, {
+            "WorldCupWinner": wcw, "RunnerUp": ru, "BronzeMedal": bm,
+            "GoldenBoot": gb, "DarkHorse": dh, "FirstKnockedOut": fko,
+        })
+        st.rerun()
+    if cb.button("Cancel", use_container_width=True):
+        st.rerun()
+
+
+@st.dialog("Resurrection — Pick Your Team")
+def _dlg_resurrection(cost: int) -> None:
+    st.markdown(f"Pick which of your teams to resurrect, then confirm your **€{cost}** purchase.")
+    st.caption("Admin will draw a surviving same-tier replacement team after your purchase is recorded.")
+
+    if not player_teams:
+        st.warning("No teams allocated yet — check back after the initial draw.")
+        if st.button("Close"):
+            st.rerun()
+        return
+
+    eliminated_team = st.selectbox(
+        "Which of your teams to resurrect?",
+        ["— select —"] + player_teams,
+    )
+
+    st.divider()
+    ca, cb = st.columns(2)
+    disabled = eliminated_team == "— select —"
+    if ca.button("Buy & Submit", type="primary", use_container_width=True, disabled=disabled):
+        _commit_purchase(player, "Resurrection", selection=eliminated_team)
+        st.rerun()
+    if cb.button("Cancel", use_container_width=True):
+        st.rerun()
+
 
 # ── Add-on cards ──────────────────────────────────────────────────────────
 st.markdown("### Add-ons")
@@ -161,7 +302,10 @@ for pt, label, description in ADDONS:
         elif not is_open:
             status_html = '<span style="color:#4B5563;font-style:italic">Deadline passed</span>'
         elif not can_afford:
-            status_html = f'<span style="color:#EF4444;font-weight:600">Over budget (need €{cost}, have €{remaining})</span>'
+            status_html = (
+                f'<span style="color:#EF4444;font-weight:600">'
+                f'Over budget (need €{cost}, have €{remaining})</span>'
+            )
         else:
             status_html = '<span style="color:#D4A017;font-weight:600">Available</span>'
 
@@ -178,7 +322,7 @@ for pt, label, description in ADDONS:
             unsafe_allow_html=True,
         )
     with col_btn:
-        st.write("")  # vertical alignment nudge
+        st.write("")
         if is_owned:
             st.button("Owned", key=f"btn_{pt}", disabled=True)
         elif not is_open:
@@ -187,13 +331,15 @@ for pt, label, description in ADDONS:
             st.button(f"€{cost}", key=f"btn_{pt}", disabled=True)
         else:
             if st.button(f"Buy  €{cost}", key=f"btn_{pt}", type="primary"):
-                from src.competition import add_purchase, load_purchases, PURCHASES_PATH
-                _ts  = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-                _all = load_purchases()
-                _upd = add_purchase(player, pt, reference="self-service", purchases=_all, timestamp=_ts)
-                _upd.to_csv(PURCHASES_PATH, index=False)
-                st.cache_data.clear()
-                st.rerun()
+                if pt == "PredictionPack":
+                    _dlg_prediction_pack(cost)
+                elif pt == "Resurrection":
+                    _dlg_resurrection(cost)
+                else:
+                    _dlg_simple(pt, label, cost)
 
 st.divider()
-st.caption("BuyIn is handled by the admin.  Mulligan / Ninth Team / Resurrection draws are run by the admin after your purchase is recorded.")
+st.caption(
+    "BuyIn is handled by the admin.  "
+    "Mulligan / Ninth Team / Resurrection draws are run by the admin after your purchase is recorded."
+)

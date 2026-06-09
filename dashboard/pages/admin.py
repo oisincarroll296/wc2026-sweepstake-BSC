@@ -36,11 +36,13 @@ def _refresh():
 
 
 def _save_purchases(df: pd.DataFrame):
-    df.to_csv(DATA / "purchases.csv", index=False)
+    from src.competition import atomic_csv_write
+    atomic_csv_write(df, DATA / "purchases.csv")
 
 
 def _save_statuses(df: pd.DataFrame):
-    df.to_csv(DATA / "players.csv", index=False)
+    from src.competition import atomic_csv_write
+    atomic_csv_write(df, DATA / "players.csv")
 
 
 # ── Tabs ──────────────────────────────────────────────────────────────────
@@ -55,6 +57,53 @@ tabs = st.tabs([
 # Tab 0: Draw Events
 # ─────────────────────────────────────────────
 with tabs[0]:
+    # ── Pending draws queue ───────────────────────────────────────────────
+    st.subheader("Pending Draws")
+    st.caption("Players who have paid for a draw-based add-on but whose draw has not been run yet.")
+
+    from src.competition import load_purchases as _lpq, load_audit_log as _lalq
+
+    _pq   = _lpq()
+    _alq  = _lalq()
+
+    _pending: list[dict] = []
+
+    if not _pq.empty:
+        # Mulligan: purchase count > MULLIGAN_EXECUTED count in audit log
+        _mul = _pq[_pq["PurchaseType"] == "Mulligan"].groupby("Player").size()
+        _mul_done: dict = {}
+        if not _alq.empty and "Action" in _alq.columns:
+            _mul_done = _alq[_alq["Action"] == "MULLIGAN_EXECUTED"].groupby("Player").size().to_dict()
+        for _pp, _cnt in _mul.items():
+            _remaining_cnt = _cnt - _mul_done.get(_pp, 0)
+            for _ in range(_remaining_cnt):
+                _pending.append({"Player": _pp, "Add-on": "Mulligan", "Action needed": "Run MULLIGAN_DRAW"})
+
+        # NinthTeam: purchases where Selection is empty (draw not yet run)
+        _nth = _pq[(_pq["PurchaseType"] == "NinthTeam") & (_pq["Selection"].fillna("") == "")]
+        for _, _r in _nth.iterrows():
+            _pending.append({"Player": _r["Player"], "Add-on": "Ninth Team", "Action needed": "Run NINTH_TEAM_DRAW"})
+
+        # Resurrection: purchases where Selection has no "->" (replacement not yet drawn)
+        _res = _pq[
+            (_pq["PurchaseType"] == "Resurrection") &
+            (~_pq["Selection"].fillna("").str.contains("->"))
+        ]
+        for _, _r in _res.iterrows():
+            _sel = _r.get("Selection", "") or ""
+            _pending.append({
+                "Player": _r["Player"],
+                "Add-on": "Resurrection",
+                "Action needed": f"Run RESURRECTION_DRAW  (nominated: {_sel or 'not set'})",
+            })
+
+    if _pending:
+        _pend_df = pd.DataFrame(_pending)
+        st.dataframe(_pend_df, use_container_width=True, hide_index=True)
+    else:
+        st.success("No pending draws — all draw-based add-ons are up to date.")
+
+    st.divider()
     st.subheader("Run Draw Events")
 
     st.caption(
@@ -229,6 +278,42 @@ with tabs[1]:
                 cost = _PRICES.get(add_type, 0)
                 st.success(f"✓ {add_type} added for {add_player}  (€{int(cost)})")
                 _refresh()
+            except Exception as exc:
+                st.error(f"Error: {exc}")
+
+    st.divider()
+
+    # ── Bulk Buy-In ────────────────────────────────────────────────────────
+    st.subheader("Bulk Buy-In")
+    st.caption("Mark every player as paid with a BuyIn purchase in one click. Skips players who already have a BuyIn.")
+
+    from dashboard.data import get_participants as _get_parts
+    from src.competition import add_purchase as _add_purchase, load_purchases as _lp, load_player_status as _ls
+    from src.event_engine import process_pending_purchases as _ppp
+
+    _all_players = _get_parts() or []
+    _existing_p  = _lp()
+    _already_in  = set()
+    if not _existing_p.empty:
+        _already_in = set(_existing_p[_existing_p["PurchaseType"] == "BuyIn"]["Player"].tolist())
+    _needs_buyin = [p for p in _all_players if p not in _already_in]
+
+    if not _needs_buyin:
+        st.success(f"All {len(_all_players)} players already have a BuyIn recorded.")
+    else:
+        st.info(f"{len(_needs_buyin)} player(s) missing BuyIn: {', '.join(_needs_buyin)}")
+        if st.button("Add BuyIn for all missing players", type="primary"):
+            try:
+                _p = _lp()
+                _s = _ls()
+                for _player in _needs_buyin:
+                    _p = _add_purchase(_player, "BuyIn", reference="bulk-admin", purchases=_p)
+                _p, _s, _msgs = _ppp(_p, _s)
+                _save_purchases(_p)
+                _save_statuses(_s)
+                _refresh()
+                st.success(f"BuyIn added for: {', '.join(_needs_buyin)}. All marked PAID.")
+                st.rerun()
             except Exception as exc:
                 st.error(f"Error: {exc}")
 
