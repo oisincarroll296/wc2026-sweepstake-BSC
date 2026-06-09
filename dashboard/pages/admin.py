@@ -28,6 +28,55 @@ if pwd != ADMIN_PASSWORD:
     st.stop()
 
 st.success("Authenticated", icon="🔓")
+
+# ── Publish to Live ───────────────────────────────────────────────────────
+import subprocess
+from datetime import date as _date
+
+_col_pub, _col_status = st.columns([1, 3])
+with _col_pub:
+    _publish = st.button("🚀 Publish to Live", type="primary", use_container_width=True)
+with _col_status:
+    # Show uncommitted data file count
+    try:
+        _diff = subprocess.run(
+            ["git", "status", "--short", "data/"],
+            capture_output=True, text=True, cwd=str(ROOT),
+        )
+        _changed = [l for l in _diff.stdout.strip().splitlines() if l.strip()]
+        if _changed:
+            st.warning(f"{len(_changed)} data file(s) not yet published: "
+                       + ", ".join(l.split()[-1] for l in _changed))
+        else:
+            st.success("Live app is up to date.")
+    except Exception:
+        pass
+
+if _publish:
+    try:
+        _msg = f"Data sync: {_date.today()}"
+        # Stage all data/ changes
+        _r1 = subprocess.run(
+            ["git", "add", "data/"],
+            capture_output=True, text=True, cwd=str(ROOT),
+        )
+        # Commit — exit code 1 just means nothing to commit, that's fine
+        _r2 = subprocess.run(
+            ["git", "commit", "-m", _msg],
+            capture_output=True, text=True, cwd=str(ROOT),
+        )
+        # Push
+        _r3 = subprocess.run(
+            ["git", "push"],
+            capture_output=True, text=True, cwd=str(ROOT),
+        )
+        if _r3.returncode == 0:
+            st.success(f"Published! Live app will update in ~30 seconds.  ({_msg})")
+        else:
+            st.error(f"Push failed: {_r3.stderr.strip() or _r3.stdout.strip()}")
+    except Exception as _e:
+        st.error(f"Error: {_e}")
+
 st.divider()
 
 
