@@ -13,6 +13,7 @@ import pandas as pd
 
 from dashboard.data import get_participants, get_purchases, get_assignments, get_teams, get_tier_map
 from dashboard.components.ui import page_header
+from dashboard.github_sync import push_file
 from src.competition import (
     add_purchase, load_purchases, load_player_status, PURCHASES_PATH,
 )
@@ -94,7 +95,7 @@ ADDONS = [
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 def _commit_purchase(player: str, pt: str, selection: str = "") -> None:
-    """Write purchase to CSV and update player status."""
+    """Write purchase to CSV, update player status, and sync to GitHub."""
     ts       = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     all_p    = load_purchases()
     updated  = add_purchase(player, pt, reference="self-service",
@@ -104,6 +105,8 @@ def _commit_purchase(player: str, pt: str, selection: str = "") -> None:
     updated.to_csv(PURCHASES_PATH, index=False)
     updated_statuses.to_csv(_PLAYERS_PATH, index=False)
     st.cache_data.clear()
+    push_file(Path(PURCHASES_PATH), "data/purchases.csv", f"Purchase: {player} {pt}")
+    push_file(_PLAYERS_PATH, "data/players.csv", f"Purchase: {player} {pt}")
 
 
 def _save_picks(player: str, picks: dict) -> None:
