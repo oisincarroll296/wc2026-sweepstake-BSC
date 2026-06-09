@@ -294,7 +294,7 @@ with tabs[0]:
 # ─────────────────────────────────────────────
 with tabs[1]:
     st.subheader("Add Purchase")
-    st.caption("Record a payment received via the Shared Revolut Pocket.")
+    st.caption("Manually record a purchase made outside the Shop (e.g. cash). For Revolut payments, players use the Shop page directly.")
 
     from src.competition import PRICES as _PRICES
     _price_labels = {k: f"{k}  (€{int(v)})" for k, v in _PRICES.items()}
@@ -442,7 +442,7 @@ with tabs[2]:
                 st.markdown("**Pre-Tournament Captain**")
                 cur_ptc = _v("PreTournamentCaptain")
                 ptc_idx = _cap_opts.index(cur_ptc) if cur_ptc in _cap_opts else 0
-                new_ptc = st.selectbox("Must be one of their original 8 teams",
+                new_ptc = st.selectbox("Must be one of their original 12 teams",
                                        _cap_opts, index=ptc_idx, key="ptc",
                                        label_visibility="collapsed")
             with pc2:

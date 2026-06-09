@@ -121,7 +121,7 @@ with tab_purchases:
         st.markdown(
             '<div class="card"><h4 style="color:#D4A017;margin:0">Mulligan — €3</h4>'
             '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.4rem 0 0">'
-            'Complete redraw of all 8 teams before the tournament starts. '
+            'Complete redraw of all 12 teams before the tournament starts. '
             'Must satisfy all allocation rules. Multiple allowed per player. '
             'All mulligans processed in batches depending on how many are bought.</p></div>',
             unsafe_allow_html=True,
@@ -176,7 +176,7 @@ with tab_captains:
     with col1:
         st.markdown(
             '<div class="card-gold"><h4 style="color:#D4A017;margin:0">Pre-Tournament Captain</h4>'
-            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.5rem 0 0">Free · Must be one of your original 8 teams · '
+            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.5rem 0 0">Free · Must be one of your original 12 teams · '
             'Selected before the opening match</p>'
             '<p style="color:#F5F5F5;margin:0.5rem 0 0">'
             'That team earns <strong>1.5× every point it scores</strong> across the entire tournament — '

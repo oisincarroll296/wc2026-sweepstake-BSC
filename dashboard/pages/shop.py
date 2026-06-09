@@ -98,7 +98,7 @@ ADDONS = [
     ),
     (
         "Mulligan", "Mulligan",
-        "Full redraw of all 8 of your teams. Admin runs the draw after your purchase.",
+        "Full redraw of all 12 of your teams. Admin runs the draw after your purchase.",
     ),
     (
         "NinthTeam", "Ninth Team",
