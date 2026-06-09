@@ -88,15 +88,14 @@ with tab_purchases:
         '<div style="background:#1A2535;border:1px solid #2A3A4A;border-radius:8px;'
         'padding:0.85rem 1.1rem;margin-bottom:1.1rem">'
         '<div style="color:#D4A017;font-weight:700;font-size:0.92rem;margin-bottom:0.45rem">'
-        '💳 How to Buy an Add-On</div>'
+        '🛒 How to Buy an Add-On</div>'
         '<div style="color:#E5E7EB;font-size:0.84rem;line-height:1.65">'
-        '1. Send the money to the <strong style="color:#D4A017">Shared Revolut Pocket</strong> '
-        'and include what you\'re buying in the transaction message<br>'
-        '2. <strong>Ninth Team</strong>  — teams are randomly drawn, &amp; <strong>Resurrection</strong> you choose'
-        '<br>'
-        '3. <strong>Prediction Pack</strong> — send your picks (World Cup winner, Golden Boot, Dark Horse, etc.) '
-        'in a separate message<br>'
-        '4. <strong>Captains</strong> — send your Pre-Tournament and Knockout captain picks separately'
+        'Go to the <strong style="color:#D4A017">Shop</strong> page and buy directly — '
+        'purchases are recorded instantly and your budget updates automatically.<br>'
+        '<strong>Prediction Pack</strong> — your picks are entered in the shop at time of purchase.<br>'
+        '<strong>Mulligan / Ninth Team / Resurrection</strong> — purchased in the shop; '
+        'Oisin runs the draw once your payment clears.<br>'
+        '<strong>Captains</strong> — set via your portfolio page before the relevant deadline.'
         '</div></div>',
         unsafe_allow_html=True,
     )
@@ -127,14 +126,6 @@ with tab_purchases:
             'All mulligans processed in batches depending on how many are bought.</p></div>',
             unsafe_allow_html=True,
         )
-        st.markdown(
-            '<div class="card"><h4 style="color:#D4A017;margin:0">Complete Redraw — €6</h4>'
-            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.4rem 0 0">'
-            'Full redraw of all 8 teams. Includes tier-balancing. '
-            '<strong style="color:#D4A017">Must be completed before the first game kicks off.</strong></p></div>',
-            unsafe_allow_html=True,
-        )
-
     with col2:
         st.markdown(
             '<div class="card"><h4 style="color:#D4A017;margin:0">Insurance — €2</h4>'
@@ -225,7 +216,7 @@ with tab_prizes:
     st.markdown("""
 **Prize Leaderboard** — Paid players only. These are the standings that determine prize money.
 
-**Overall Leaderboard** — All 14 players. Players without a Buy In are shown greyed out and cannot win prizes.
+**Overall Leaderboard** — All 7 players. Players without a Buy In are shown greyed out and cannot win prizes.
 """)
 
 # ── TIEBREAKERS ───────────────────────────────────────────────────────────────
