@@ -150,10 +150,12 @@ st.query_params["player"] = player
 
 try:
     _host = st.context.headers.get("host", "localhost:8502")
+    _scheme = "https" if "streamlit.app" in _host else "http"
 except Exception:
     _host = "localhost:8502"
+    _scheme = "http"
 with st.expander("Share my shop link"):
-    st.code(f"http://{_host}/shop?player={_urlparse.quote(player)}", language=None)
+    st.code(f"{_scheme}://{_host}/shop?player={_urlparse.quote(player)}", language=None)
 
 # ── Load data ──────────────────────────────────────────────────────────────
 purchases   = get_purchases()

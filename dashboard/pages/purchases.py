@@ -59,15 +59,14 @@ st.markdown(
     '<div style="background:#1A2535;border:1px solid #D4A01744;border-radius:10px;'
     'padding:0.85rem 1.1rem;margin-bottom:1.1rem">'
     '<div style="color:#D4A017;font-weight:700;font-size:0.92rem;margin-bottom:0.45rem">'
-    '💳 How to Buy an Add-On</div>'
+    '🛒 How to Buy an Add-On</div>'
     '<div style="color:#E5E7EB;font-size:0.84rem;line-height:1.65">'
-    '1. Send the money to the <strong style="color:#D4A017">Shared Revolut Pocket</strong> '
-    'and include what you\'re buying in the transaction message<br>'
-    '2. <strong>Ninth Team</strong> &amp; <strong>Resurrection</strong> — teams are randomly drawn, '
-    'no selection needed<br>'
-    '3. <strong>Prediction Pack</strong> — send your picks (World Cup winner, Golden Boot, Dark Horse) '
-    'in a separate message<br>'
-    '4. <strong>Captains</strong> — send your Pre-Tournament and Knockout captain picks separately'
+    'Go to the <strong style="color:#D4A017">Shop</strong> page and buy directly — '
+    'add-ons are recorded instantly and your budget updates automatically.<br>'
+    '<strong>Prediction Pack</strong> — your picks (WC Winner, Golden Boot, Dark Horse etc.) '
+    'are entered in the shop at time of purchase.<br>'
+    '<strong>Mulligan / Ninth Team / Resurrection</strong> — purchased in the shop; '
+    'Oisin runs the draw after your payment clears.'
     '</div>'
     f'<div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-top:0.65rem">{_price_chips}</div>'
     '</div>',
@@ -155,7 +154,7 @@ st.dataframe(
     use_container_width=True,
     hide_index=True,
 )
-st.caption("✓ Purchased  ·  Available — message Oisin to buy  ·  Deadline passed — window closed")
+st.caption("✓ Purchased  ·  Available — buy via the Shop page  ·  Deadline passed — window closed")
 
 # ── Summary strip ───────────────────────────────────────────────────────────
 st.divider()

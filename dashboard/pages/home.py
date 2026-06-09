@@ -11,7 +11,7 @@ from datetime import datetime
 
 from dashboard.data import (
     get_prize_pool, get_overall_leaderboard, get_top_team,
-    get_paid_count, get_pack_count, get_audit_log, get_events,
+    get_paid_count, get_events,
     get_assignments, get_participants, get_deadlines, countdown, DEADLINE_LABELS,
 )
 from dashboard.components.ui import page_header, empty_state
@@ -112,50 +112,18 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ── All deadlines expander ─────────────────────────────────────────────────
-if deadlines:
-    with st.expander("All Deadlines"):
-        for key, iso in deadlines.items():
-            label = DEADLINE_LABELS.get(key, key.replace("_", " ").title())
-            cd = countdown(iso)
-            passed = cd == "PASSED"
-            colour = "#6B7280" if passed else "#F5F5F5"
-            cd_colour = "#6B7280" if passed else "#D4A017"
-            try:
-                from datetime import timedelta, timezone as _tz
-                _IST = _tz(timedelta(hours=1))
-                _dt = datetime.fromisoformat(iso).astimezone(_IST)
-                display_time = f"{_dt.day} {_dt.strftime('%b %Y %H:%M')}"
-            except Exception:
-                display_time = iso
-            st.markdown(
-                f'<div style="display:flex;justify-content:space-between;'
-                f'padding:0.3rem 0;border-bottom:1px solid #2A3A4A">'
-                f'<span style="color:{colour};font-size:0.88rem">{label}</span>'
-                f'<span style="font-size:0.85rem">'
-                f'<span style="color:#9CA3AF">{display_time}</span>'
-                f'&nbsp;&nbsp;<strong style="color:{cd_colour}">{cd}</strong>'
-                f'</span></div>',
-                unsafe_allow_html=True,
-            )
-        st.markdown("")
-
 # ── KPI Row ────────────────────────────────────────────────────────────────
 pool     = get_prize_pool()
 paid     = get_paid_count()
-packs    = get_pack_count()
 top_t, top_pts = get_top_team()
 lb       = get_overall_leaderboard()
 
-r1c1, r1c2 = st.columns(2)
-r2c1, r2c2 = st.columns(2)
+r1c1, r1c2, r1c3 = st.columns(3)
 with r1c1:
-    st.metric("Prize Pool", f"€{pool.get('current_pot', 0):.2f}")
+    st.metric("Prize Pool", f"€{pool.get('current_pot', 0):.0f}")
 with r1c2:
-    st.metric("Paid Players", f"{paid} / {len(lb)}" if not lb.empty else str(paid))
-with r2c1:
-    st.metric("Prediction Packs", packs)
-with r2c2:
+    st.metric("Paid In", f"{paid} / {len(lb)}" if not lb.empty else str(paid))
+with r1c3:
     if top_t:
         st.metric("Top Team", top_t, f"{top_pts:.0f} pts")
     else:
@@ -205,25 +173,6 @@ with col_left:
         )
 
 with col_right:
-    # Prize Split
-    st.subheader("Prize Split")
-    pool_val = pool.get("current_pot", 0)
-    splits = [
-        ("🥇 1st Place", pool.get("first_prize", 0)),
-        ("🥈 2nd Place", pool.get("second_prize", 0)),
-        ("🥉 3rd Place", pool.get("third_prize", 0)),
-    ]
-    for label, amount in splits:
-        pct = f"{amount / pool_val * 100:.0f}%" if pool_val else "—"
-        st.markdown(
-            f'<div class="card" style="display:flex;justify-content:space-between;align-items:center">'
-            f'<span>{label}</span>'
-            f'<span style="color:#D4A017;font-size:1.05rem;font-weight:700">'
-            f'€{amount:.2f} <span style="color:#9CA3AF;font-size:0.75rem">{pct}</span>'
-            f'</span></div>',
-            unsafe_allow_html=True,
-        )
-
     # Today's Fixtures
     st.subheader("Today's Fixtures")
     try:
@@ -270,47 +219,3 @@ with col_right:
     except Exception:
         pass
 
-    # Next Event
-    st.subheader("Next Event")
-    if not events.empty:
-        scheduled = events[events["Status"].isin(["SCHEDULED", "OPEN"])]
-        if not scheduled.empty:
-            nxt = scheduled.iloc[0]
-            try:
-                from datetime import timedelta as _td, timezone as _tz2
-                _IST2 = _tz2(_td(hours=1))
-                _sched_iso = str(nxt.get("ScheduledTime", "") or "")
-                _sched_label = datetime.fromisoformat(_sched_iso).astimezone(_IST2).strftime("%d %b %H:%M") if _sched_iso else ""
-            except Exception:
-                _sched_label = ""
-            st.markdown(
-                f'<div class="card-gold">'
-                f'<p style="color:#D4A017;font-weight:700;margin:0">'
-                f'{str(nxt["EventType"]).replace("_", " ")}</p>'
-                f'<p style="color:#9CA3AF;font-size:0.8rem;margin:0.25rem 0 0">'
-                f'{_sched_label}</p>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                '<div class="card"><span style="color:#9CA3AF">No upcoming events scheduled.</span></div>',
-                unsafe_allow_html=True,
-            )
-    else:
-        st.markdown(
-            '<div class="card"><span style="color:#9CA3AF">Draw not yet run.</span></div>',
-            unsafe_allow_html=True,
-        )
-
-st.divider()
-
-# ── Recent Activity ────────────────────────────────────────────────────────
-st.subheader("Recent Activity")
-audit = get_audit_log()
-if audit.empty:
-    empty_state("No activity recorded yet.")
-else:
-    recent = audit.tail(10).iloc[::-1].reset_index(drop=True)
-    show = [c for c in ["Timestamp", "Event", "Player", "Action", "Result"] if c in recent.columns]
-    st.dataframe(recent[show], use_container_width=True, hide_index=True)

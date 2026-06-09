@@ -37,10 +37,12 @@ st.query_params["player"] = player
 # Shareable link — derive the full URL from the request Host header
 import urllib.parse as _urlparse
 try:
-    _host = st.context.headers.get("host", "localhost:8501")
+    _host = st.context.headers.get("host", "localhost:8502")
+    _scheme = "https" if "streamlit.app" in _host else "http"
 except Exception:
-    _host = "localhost:8501"
-_share_url = f"http://{_host}/player_portfolios?player={_urlparse.quote(player)}"
+    _host = "localhost:8502"
+    _scheme = "http"
+_share_url = f"{_scheme}://{_host}/player_portfolios?player={_urlparse.quote(player)}"
 with st.expander("📤 Share my portfolio link", expanded=False):
     st.markdown("Send this URL directly to your profile:")
     st.code(_share_url, language=None)
