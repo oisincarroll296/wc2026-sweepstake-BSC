@@ -2,11 +2,16 @@
 
 ## Live App
 
-**https://fellas-wc2026-sweepstake.streamlit.app/**
+**https://bsc-wc2026-sweepstake.streamlit.app/**
 
 Player portfolio links follow this pattern:
 ```
-https://fellas-wc2026-sweepstake.streamlit.app/player_portfolios?player=Oisin%20C
+https://bsc-wc2026-sweepstake.streamlit.app/player_portfolios?player=Oisin
+```
+
+Player shop links follow this pattern:
+```
+https://bsc-wc2026-sweepstake.streamlit.app/shop?player=Oisin
 ```
 
 The **Share my portfolio link** button on the Player Portfolios page generates this URL automatically.
