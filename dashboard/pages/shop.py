@@ -106,7 +106,7 @@ ADDONS = [
     ),
     (
         "Resurrection", "Resurrection",
-        "Replace one eliminated team with a surviving same-tier team. Pick which team below — admin draws the replacement.",
+        "Replace one eliminated team with a surviving same-tier team. You'll pick which team in the next step — admin draws the replacement.",
     ),
 ]
 
@@ -360,6 +360,7 @@ for pt, label, description in ADDONS:
 
 st.divider()
 st.caption(
-    "BuyIn is handled by the admin.  "
-    "Mulligan / Ninth Team / Resurrection draws are run by the admin after your purchase is recorded."
+    "Purchasing here records your add-on — you still need to send payment to Oisin (Revolut). "
+    "Mulligan / Ninth Team / Resurrection draws are run by Oisin once your payment clears. "
+    "BuyIn is handled by Oisin directly."
 )
