@@ -59,3 +59,14 @@ def push_file(local_path: Path, repo_path: str, message: str) -> bool:
         resp = _do_put(sha2)
 
     return resp.ok
+
+
+def push_data_files(data_dir: Path, *filenames: str) -> None:
+    """Push a set of data/ files to GitHub. Swallows errors — never blocks the caller."""
+    for fn in filenames:
+        local = data_dir / fn
+        if local.exists():
+            try:
+                push_file(local, f"data/{fn}", f"Admin sync: {fn}")
+            except Exception:
+                pass

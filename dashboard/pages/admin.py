@@ -8,6 +8,7 @@ import pandas as pd
 
 from dashboard.config import ADMIN_PASSWORD
 from dashboard.components.ui import page_header, copyable_text
+from dashboard.github_sync import push_file, push_data_files
 
 ROOT = Path(__file__).parent.parent.parent
 DATA = ROOT / "data"
@@ -30,52 +31,33 @@ if pwd != ADMIN_PASSWORD:
 st.success("Authenticated", icon="🔓")
 
 # ── Publish to Live ───────────────────────────────────────────────────────
-import subprocess
-from datetime import date as _date
+_ALL_DATA_FILES = [
+    "purchases.csv", "players.csv", "allocation.csv",
+    "events.csv", "audit_log.csv",
+    "match_results.csv", "match_stats.csv", "score_history.csv",
+    "deadlines.json", "tournament_results.json",
+]
 
-_col_pub, _col_status = st.columns([1, 3])
-with _col_pub:
-    _publish = st.button("🚀 Publish to Live", type="primary", use_container_width=True)
-with _col_status:
-    # Show uncommitted data file count
-    try:
-        _diff = subprocess.run(
-            ["git", "status", "--short", "data/"],
-            capture_output=True, text=True, cwd=str(ROOT),
-        )
-        _changed = [l for l in _diff.stdout.strip().splitlines() if l.strip()]
-        if _changed:
-            st.warning(f"{len(_changed)} data file(s) not yet published: "
-                       + ", ".join(l.split()[-1] for l in _changed))
-        else:
-            st.success("Live app is up to date.")
-    except Exception:
-        pass
-
-if _publish:
-    try:
-        _msg = f"Data sync: {_date.today()}"
-        # Stage all data/ changes
-        _r1 = subprocess.run(
-            ["git", "add", "data/"],
-            capture_output=True, text=True, cwd=str(ROOT),
-        )
-        # Commit — exit code 1 just means nothing to commit, that's fine
-        _r2 = subprocess.run(
-            ["git", "commit", "-m", _msg],
-            capture_output=True, text=True, cwd=str(ROOT),
-        )
-        # Push
-        _r3 = subprocess.run(
-            ["git", "push"],
-            capture_output=True, text=True, cwd=str(ROOT),
-        )
-        if _r3.returncode == 0:
-            st.success(f"Published! Live app will update in ~30 seconds.  ({_msg})")
-        else:
-            st.error(f"Push failed: {_r3.stderr.strip() or _r3.stdout.strip()}")
-    except Exception as _e:
-        st.error(f"Error: {_e}")
+if st.button("🚀 Publish All Data to Live", type="primary"):
+    with st.spinner("Pushing data files to GitHub…"):
+        _ok, _fail = [], []
+        for _fn in _ALL_DATA_FILES:
+            _lp = DATA / _fn
+            if not _lp.exists():
+                continue
+            try:
+                if push_file(_lp, f"data/{_fn}", f"Admin publish: {_fn}"):
+                    _ok.append(_fn)
+                else:
+                    _fail.append(_fn)
+            except Exception as _e:
+                _fail.append(f"{_fn} ({_e})")
+    if _ok:
+        st.success(f"Published {len(_ok)} file(s): {', '.join(_ok)}")
+    if _fail:
+        st.warning(f"Skipped / failed: {', '.join(_fail)}")
+    if not _ok and not _fail:
+        st.info("No data files found to publish.")
 
 st.divider()
 
@@ -84,12 +66,18 @@ def _refresh():
     st.cache_data.clear()
 
 
+def _sync(*filenames: str) -> None:
+    push_data_files(DATA, *filenames)
+
+
 def _save_purchases(df: pd.DataFrame):
     df.to_csv(DATA / "purchases.csv", index=False)
+    _sync("purchases.csv")
 
 
 def _save_statuses(df: pd.DataFrame):
     df.to_csv(DATA / "players.csv", index=False)
+    _sync("players.csv")
 
 
 # ── Tabs ──────────────────────────────────────────────────────────────────
@@ -182,6 +170,7 @@ with tabs[0]:
                     st.code(result["broadcast"], language=None)
                 if "summary" in result:
                     st.info(result["summary"])
+                _sync("allocation.csv", "events.csv", "audit_log.csv", "purchases.csv", "players.csv")
                 _refresh()
             except Exception as exc:
                 st.error(f"Error: {exc}")
@@ -275,6 +264,7 @@ with tabs[0]:
                 _audit_new = pd.concat([_audit, _new_log], ignore_index=True)
                 _audit_new.to_csv(DATA / "audit_log.csv", index=False)
 
+                _sync("allocation.csv", "purchases.csv", "events.csv", "audit_log.csv")
                 _refresh()
                 st.success(
                     f"{_del_type} deleted. "
@@ -511,6 +501,7 @@ with tabs[2]:
                     _picks_df.loc[_row_mask, "DarkHorse"]            = new_dh
                     _picks_df.loc[_row_mask, "FirstKnockedOut"]      = new_fko
                     _picks_df.to_csv(_players_path, index=False)
+                    _sync("players.csv")
                     st.success(f"Picks saved for {_player_sel}.")
                     _refresh()
 
@@ -561,6 +552,7 @@ with tabs[3]:
                     dl = get_deadlines()
                     dl["prediction_lock"] = now_iso
                     save_deadlines(dl)
+                    _sync("events.csv", "audit_log.csv", "deadlines.json")
                     preds = load_predictions()
                     n = len(preds) if not preds.empty else 0
                     st.success(f"Predictions locked. {n} player prediction(s) now public.")
@@ -585,6 +577,7 @@ with tabs[3]:
                     dl = get_deadlines()
                     dl["buy_in_deadline"] = now_iso
                     save_deadlines(dl)
+                    _sync("events.csv", "audit_log.csv", "deadlines.json", "players.csv")
                     paid = s[s["Status"] == "PAID"] if not s.empty else pd.DataFrame()
                     unpaid = s[s["Status"] != "PAID"] if not s.empty else pd.DataFrame()
                     st.success(f"Buy-ins locked. {len(paid)} paid / {len(unpaid)} unpaid.")
@@ -771,6 +764,7 @@ with tabs[4]:
                                 comeback_home = cb_home,
                                 comeback_away = cb_away,
                             )
+                            _sync("match_results.csv", "match_stats.csv")
                             st.success(
                                 f"Saved: {home_team} {h_goals}–{a_goals} {away_team}. "
                                 "Stats recalculated."
@@ -856,6 +850,7 @@ with tabs[4]:
                         "RoundReached": rnd,
                     }, ms)
                     ms.to_csv(DATA / "match_stats.csv", index=False)
+                    _sync("match_stats.csv")
                     st.success(f"Saved {res_team}.")
                     _refresh()
                 except Exception as exc:
@@ -939,6 +934,7 @@ with tabs[5]:
                             _se_ms2[_col] = 0
                         _se_ms2.loc[_mask, _col] = _val
                     _se_ms2.to_csv(DATA / "match_stats.csv", index=False)
+                    _sync("match_stats.csv")
                     st.success(f"Special events saved for {_se_team}.")
                     _refresh()
             except Exception as exc:
@@ -1011,6 +1007,7 @@ with tabs[6]:
                 "golden_boot_winner": _tr_gb,
             }
             _tr_path.write_text(_json.dumps(_tr_new, indent=2), encoding="utf-8")
+            _sync("tournament_results.json")
             st.success("Tournament results saved.")
             _refresh()
             st.rerun()
@@ -1150,6 +1147,7 @@ with tabs[9]:
 
         if st.form_submit_button("Save All Deadlines", type="primary"):
             save_deadlines(updated)
+            _sync("deadlines.json")
             _refresh()
             st.success("Deadlines saved.")
             st.rerun()
