@@ -23,6 +23,22 @@ CAPTAIN_MULTIPLIER = 1.5          # effective multiplier; bonus = 0.5 × base
 INSURANCE_BONUS = 25              # +25 if either T1 team eliminated in groups
 PREDICTION_WINNER_BONUS = 30
 PREDICTION_GOLDEN_BOOT_BONUS = 25
+PREDICTION_RUNNER_UP_BONUS = 20
+PREDICTION_BRONZE_BONUS = 15
+PREDICTION_FIRST_KNOCKED_OUT_BONUS = 20
+
+# Regular match result bonuses
+WIN_BONUS = 3                     # any win (normal time, extra time, or penalties)
+HAT_TRICK_BONUS = 10              # hat trick scored by any player in the match
+
+# Special match event bonuses
+SHIRT_REMOVAL_BONUS = 25          # player removes shirt celebrating
+GK_GOAL_BONUS = 75                # goalkeeper scores
+RED_CARD_PENALTY = 15             # per red card (applied negatively)
+FIRST_ELIMINATED_BONUS = 35       # consolation for owner of first team knocked out
+
+# Tier-upset win bonuses (winner is N tiers below/worse than loser)
+UPSET_WIN_BONUSES: dict[int, int] = {1: 15, 2: 30, 3: 50}
 
 # Cumulative dark horse bonuses — awarded for each round reached
 DARK_HORSE_BONUSES: dict[str, int] = {
@@ -30,20 +46,22 @@ DARK_HORSE_BONUSES: dict[str, int] = {
 }
 
 # Progression bonuses per tier — cumulative for each knockout round cleared
-# T1 unchanged; T2/T3/T4 SF/Final/Winner reduced to narrow score ceiling
 PROGRESSION_BONUSES: dict[int, dict[str, int]] = {
-    1: {"R16": 2,  "QF": 4,  "SF": 8,  "Final": 12, "Winner": 20},
-    2: {"R16": 4,  "QF": 8,  "SF": 12, "Final": 18, "Winner": 28},
-    3: {"R16": 8,  "QF": 15, "SF": 20, "Final": 32, "Winner": 46},
-    4: {"R16": 12, "QF": 25, "SF": 30, "Final": 45, "Winner": 65},
+    1: {"R32": 1,  "R16": 2,  "QF": 4,  "SF": 8,  "Final": 12, "Winner": 20},
+    2: {"R32": 2,  "R16": 4,  "QF": 8,  "SF": 12, "Final": 18, "Winner": 28},
+    3: {"R32": 5,  "R16": 8,  "QF": 15, "SF": 20, "Final": 32, "Winner": 46},
+    4: {"R32": 8,  "R16": 12, "QF": 25, "SF": 30, "Final": 45, "Winner": 65},
 }
 
-ROUND_ORDER: list[str] = ["GroupStage", "R16", "QF", "SF", "Final", "Winner"]
-KNOCKOUT_ROUNDS: list[str] = ["R16", "QF", "SF", "Final", "Winner"]
+ROUND_ORDER: list[str] = ["GroupStage", "R32", "R16", "QF", "SF", "Final", "Winner"]
+KNOCKOUT_ROUNDS: list[str] = ["R32", "R16", "QF", "SF", "Final", "Winner"]
 DARK_HORSE_QUALIFYING_ROUNDS: list[str] = ["QF", "SF", "Final", "Winner"]
 
+# Insurance triggers for T1 teams eliminated at or before R32
+INSURANCE_ELIGIBLE_ROUNDS = frozenset({"GroupStage", "R32"})
+
 VALID_PURCHASE_TYPES = frozenset({
-    "Mulligan", "PredictionPack", "Insurance", "NinthTeam",
+    "Mulligan", "CompleteRedraw", "PredictionPack", "Insurance", "NinthTeam",
     "Resurrection", "PreTournamentCaptain", "KnockoutCaptain",
 })
 VALID_CAPTAIN_TYPES = frozenset({"PreTournament", "Knockout"})
@@ -72,9 +90,13 @@ def load_purchases(path: Optional[Path | str] = None) -> pd.DataFrame:
 def load_predictions(path: Optional[Path | str] = None) -> pd.DataFrame:
     p = Path(path) if path else PLAYER_PICKS_PATH
     if not p.exists():
-        return pd.DataFrame(columns=["Player", "WorldCupWinner", "GoldenBoot", "DarkHorse"])
+        return pd.DataFrame(columns=[
+            "Player", "WorldCupWinner", "RunnerUp", "BronzeMedal",
+            "GoldenBoot", "DarkHorse", "FirstKnockedOut",
+        ])
     df = pd.read_csv(p, dtype=str).fillna("")
-    cols = ["Player", "WorldCupWinner", "GoldenBoot", "DarkHorse"]
+    cols = ["Player", "WorldCupWinner", "RunnerUp", "BronzeMedal",
+            "GoldenBoot", "DarkHorse", "FirstKnockedOut"]
     return df[[c for c in cols if c in df.columns]].copy()
 
 
@@ -95,9 +117,13 @@ def load_captains(path: Optional[Path | str] = None) -> pd.DataFrame:
 def _empty_match_stats() -> pd.DataFrame:
     return pd.DataFrame(columns=[
         "Team", "GroupGoals", "GroupCleanSheets", "GroupPenaltyWins",
-        "GroupComebackWins", "GroupWinner", "KnockoutGoals",
-        "KnockoutCleanSheets", "KnockoutPenaltyWins", "KnockoutComebackWins",
+        "GroupComebackWins", "GroupWinner", "GroupWins", "GroupHatTricks",
+        "KnockoutGoals", "KnockoutCleanSheets", "KnockoutPenaltyWins",
+        "KnockoutComebackWins", "KnockoutWins", "KnockoutHatTricks",
         "RoundReached",
+        "GroupUpsetWins1", "GroupUpsetWins2", "GroupUpsetWins3",
+        "KnockoutUpsetWins1", "KnockoutUpsetWins2", "KnockoutUpsetWins3",
+        "ShirtRemovals", "GKGoals", "RedCards", "FirstEliminated",
     ])
 
 
@@ -105,8 +131,12 @@ def _coerce_match_stats(df: pd.DataFrame) -> None:
     """In-place numeric coercion for match stats columns."""
     int_cols = [
         "GroupGoals", "GroupCleanSheets", "GroupPenaltyWins", "GroupComebackWins",
-        "GroupWinner", "KnockoutGoals", "KnockoutCleanSheets", "KnockoutPenaltyWins",
-        "KnockoutComebackWins",
+        "GroupWinner", "GroupWins", "GroupHatTricks",
+        "KnockoutGoals", "KnockoutCleanSheets", "KnockoutPenaltyWins",
+        "KnockoutComebackWins", "KnockoutWins", "KnockoutHatTricks",
+        "GroupUpsetWins1", "GroupUpsetWins2", "GroupUpsetWins3",
+        "KnockoutUpsetWins1", "KnockoutUpsetWins2", "KnockoutUpsetWins3",
+        "ShirtRemovals", "GKGoals", "RedCards", "FirstEliminated",
     ]
     for col in int_cols:
         if col in df.columns:
@@ -178,15 +208,17 @@ def calculate_team_points(
     match_stats: pd.DataFrame,
     tier: int,
 ) -> dict:
-    """Points earned by one team from match events and progression bonuses.
+    """Points earned by one team from match events, progression bonuses, and special events.
 
-    Returns {group_stage, knockout, total, breakdown}.
-    - group_stage: goals + clean sheets etc. from group stage only
-    - knockout:    the same from knockout rounds PLUS cumulative progression bonuses
+    Returns {group_stage, knockout, special, total, breakdown}.
+    - group_stage: goals + clean sheets + group-stage upset wins
+    - knockout:    the same from knockout rounds PLUS cumulative progression bonuses + KO upset wins
+    - special:     shirt removals, GK goals, red cards, first-eliminated bonus
+                   (included in pre-tournament captain bonus but NOT knockout captain)
     """
     row = match_stats.loc[match_stats["Team"] == team]
     if row.empty:
-        return {"group_stage": 0.0, "knockout": 0.0, "total": 0.0, "breakdown": {}}
+        return {"group_stage": 0.0, "knockout": 0.0, "special": 0.0, "total": 0.0, "breakdown": {}}
 
     r = row.iloc[0]
     breakdown: dict[str, float] = {}
@@ -197,6 +229,7 @@ def calculate_team_points(
     for col, pts_each in [
         ("GroupGoals", 1), ("GroupCleanSheets", 2),
         ("GroupPenaltyWins", 3), ("GroupComebackWins", 3),
+        ("GroupWins", WIN_BONUS), ("GroupHatTricks", HAT_TRICK_BONUS),
     ]:
         count = _safe_int(r.get(col, 0))
         pts = float(count * pts_each)
@@ -208,13 +241,32 @@ def calculate_team_points(
         breakdown["GroupWinner"] = 3.0
         gs += 3.0
 
+    # Group stage upset wins
+    for diff, bonus in UPSET_WIN_BONUSES.items():
+        col = f"GroupUpsetWins{diff}"
+        count = _safe_int(r.get(col, 0))
+        pts = float(count * bonus)
+        if pts:
+            breakdown[col] = pts
+        gs += pts
+
     # Knockout match points
     for col, pts_each in [
         ("KnockoutGoals", 1), ("KnockoutCleanSheets", 2),
         ("KnockoutPenaltyWins", 3), ("KnockoutComebackWins", 3),
+        ("KnockoutWins", WIN_BONUS), ("KnockoutHatTricks", HAT_TRICK_BONUS),
     ]:
         count = _safe_int(r.get(col, 0))
         pts = float(count * pts_each)
+        if pts:
+            breakdown[col] = pts
+        ko += pts
+
+    # Knockout upset wins
+    for diff, bonus in UPSET_WIN_BONUSES.items():
+        col = f"KnockoutUpsetWins{diff}"
+        count = _safe_int(r.get(col, 0))
+        pts = float(count * bonus)
         if pts:
             breakdown[col] = pts
         ko += pts
@@ -231,8 +283,26 @@ def calculate_team_points(
                     breakdown[f"Progression_{rnd}"] = pts
                     ko += pts
 
-    total = gs + ko
-    return {"group_stage": gs, "knockout": ko, "total": total, "breakdown": breakdown}
+    # Special event bonuses (separate bucket — included in pre-tournament captain bonus)
+    shirt   = _safe_int(r.get("ShirtRemovals", 0))
+    gk      = _safe_int(r.get("GKGoals", 0))
+    red     = _safe_int(r.get("RedCards", 0))
+    first_e = _safe_int(r.get("FirstEliminated", 0))
+
+    if shirt:   breakdown["ShirtRemovals"]  = float(shirt * SHIRT_REMOVAL_BONUS)
+    if gk:      breakdown["GKGoals"]        = float(gk * GK_GOAL_BONUS)
+    if red:     breakdown["RedCards"]       = float(-red * RED_CARD_PENALTY)
+    if first_e: breakdown["FirstEliminated"] = float(FIRST_ELIMINATED_BONUS)
+
+    special = float(
+        shirt   * SHIRT_REMOVAL_BONUS
+        + gk    * GK_GOAL_BONUS
+        - red   * RED_CARD_PENALTY
+        + first_e * FIRST_ELIMINATED_BONUS
+    )
+
+    total = gs + ko + special
+    return {"group_stage": gs, "knockout": ko, "special": special, "total": total, "breakdown": breakdown}
 
 
 def calculate_captain_bonus(
@@ -316,7 +386,7 @@ def calculate_insurance_bonus(
         if row.empty:
             continue
         round_reached = str(row.iloc[0].get("RoundReached", "") or "").strip()
-        if round_reached == "GroupStage":
+        if round_reached in INSURANCE_ELIGIBLE_ROUNDS:
             count += 1
 
     return float(count * INSURANCE_BONUS)
@@ -330,22 +400,23 @@ def calculate_prediction_points(
     """Bonus points from Prediction Pack.
 
     tournament_results expected keys:
-        world_cup_winner:   str  — winning team name
-        golden_boot_winner: str  — golden boot winner name
-        dark_horse_rounds:  dict[str, str]  — team -> round_reached
+        world_cup_winner:    str  — winning team name
+        runner_up:           str  — runner-up team name
+        bronze_winner:       str  — 3rd place team name
+        golden_boot_winner:  str  — golden boot winner name
+        first_knocked_out:   str  — first team eliminated (auto-derived if absent)
+        dark_horse_rounds:   dict[str, str]  — team -> round_reached
 
     Dark horse bonuses are cumulative: each qualifying round adds more.
 
-    Returns {world_cup_winner, golden_boot, dark_horse,
-             winner_bonus, golden_boot_bonus, dark_horse_bonus, total}
+    Returns prediction picks and bonus values for all categories.
     """
     result = {
-        "world_cup_winner": None,
-        "golden_boot": None,
-        "dark_horse": None,
-        "winner_bonus": 0.0,
-        "golden_boot_bonus": 0.0,
-        "dark_horse_bonus": 0.0,
+        "world_cup_winner": None, "runner_up": None, "bronze_winner": None,
+        "golden_boot": None, "dark_horse": None, "first_knocked_out": None,
+        "winner_bonus": 0.0, "runner_up_bonus": 0.0, "bronze_bonus": 0.0,
+        "golden_boot_bonus": 0.0, "dark_horse_bonus": 0.0,
+        "first_knocked_out_bonus": 0.0,
         "total": 0.0,
     }
     if predictions.empty or not tournament_results:
@@ -357,7 +428,7 @@ def calculate_prediction_points(
 
     pred = p.iloc[0]
 
-    # World Cup Winner
+    # World Cup Winner (+30)
     predicted_winner = str(pred.get("WorldCupWinner", "") or "").strip()
     result["world_cup_winner"] = predicted_winner or None
     actual_winner = str(tournament_results.get("world_cup_winner", "") or "").strip()
@@ -365,13 +436,37 @@ def calculate_prediction_points(
         result["winner_bonus"] = float(PREDICTION_WINNER_BONUS)
         result["total"] += result["winner_bonus"]
 
-    # Golden Boot
+    # Runner-up (+20)
+    predicted_ru = str(pred.get("RunnerUp", "") or "").strip()
+    result["runner_up"] = predicted_ru or None
+    actual_ru = str(tournament_results.get("runner_up", "") or "").strip()
+    if predicted_ru and predicted_ru == actual_ru:
+        result["runner_up_bonus"] = float(PREDICTION_RUNNER_UP_BONUS)
+        result["total"] += result["runner_up_bonus"]
+
+    # Bronze Medal (+15)
+    predicted_bronze = str(pred.get("BronzeMedal", "") or "").strip()
+    result["bronze_winner"] = predicted_bronze or None
+    actual_bronze = str(tournament_results.get("bronze_winner", "") or "").strip()
+    if predicted_bronze and predicted_bronze == actual_bronze:
+        result["bronze_bonus"] = float(PREDICTION_BRONZE_BONUS)
+        result["total"] += result["bronze_bonus"]
+
+    # Golden Boot (+25)
     predicted_gb = str(pred.get("GoldenBoot", "") or "").strip()
     result["golden_boot"] = predicted_gb or None
     actual_gb = str(tournament_results.get("golden_boot_winner", "") or "").strip()
     if predicted_gb and predicted_gb == actual_gb:
         result["golden_boot_bonus"] = float(PREDICTION_GOLDEN_BOOT_BONUS)
         result["total"] += result["golden_boot_bonus"]
+
+    # First Knocked Out (+20)
+    predicted_fko = str(pred.get("FirstKnockedOut", "") or "").strip()
+    result["first_knocked_out"] = predicted_fko or None
+    actual_fko = str(tournament_results.get("first_knocked_out", "") or "").strip()
+    if predicted_fko and predicted_fko == actual_fko:
+        result["first_knocked_out_bonus"] = float(PREDICTION_FIRST_KNOCKED_OUT_BONUS)
+        result["total"] += result["first_knocked_out_bonus"]
 
     # Dark Horse — cumulative per qualifying round reached
     predicted_dh = str(pred.get("DarkHorse", "") or "").strip()
@@ -422,11 +517,12 @@ def calculate_player_points(
         for t in all_relevant
     }
 
-    gs_total = sum(team_pts[t]["group_stage"] for t in gs_teams)
-    ko_total = sum(team_pts[t]["knockout"]    for t in ko_teams)
-    base_total = gs_total + ko_total
+    gs_total      = sum(team_pts[t]["group_stage"] for t in gs_teams)
+    ko_total      = sum(team_pts[t]["knockout"]    for t in ko_teams)
+    special_total = sum(team_pts[t]["special"]     for t in all_relevant)
+    base_total    = gs_total + ko_total  # match events + progression + upset wins
 
-    captain_info = calculate_captain_bonus(player, team_pts, captains, eff)
+    captain_info  = calculate_captain_bonus(player, team_pts, captains, eff)
     insurance_pts = calculate_insurance_bonus(
         player, assignments, match_stats, purchases, tier_map
     )
@@ -436,6 +532,7 @@ def calculate_player_points(
         base_total
         + captain_info["total"]
         + insurance_pts
+        + special_total
         + pred_info["total"]
     )
 
@@ -446,6 +543,7 @@ def calculate_player_points(
         "team_points": team_pts,
         "group_stage_points": gs_total,
         "knockout_points": ko_total,
+        "special_bonus": special_total,
         "base_total": base_total,
         "captain": captain_info,
         "insurance_bonus": insurance_pts,
@@ -479,6 +577,13 @@ def calculate_leaderboard(
             str(row["Team"]): str(row.get("RoundReached", "") or "")
             for _, row in match_stats.iterrows()
         }
+    # Auto-derive first_knocked_out from FirstEliminated flag in match_stats
+    if "first_knocked_out" not in tr and not match_stats.empty:
+        fe_col = "FirstEliminated"
+        if fe_col in match_stats.columns:
+            fe_rows = match_stats[pd.to_numeric(match_stats[fe_col], errors="coerce").fillna(0).astype(int) == 1]
+            if not fe_rows.empty:
+                tr["first_knocked_out"] = str(fe_rows.iloc[0]["Team"])
 
     rows = []
     for player in participants:
@@ -491,6 +596,7 @@ def calculate_leaderboard(
             "BasePoints": info["base_total"],
             "CaptainBonus": info["captain"]["total"],
             "InsuranceBonus": info["insurance_bonus"],
+            "SpecialBonus": info["special_bonus"],
             "PredictionBonus": info["predictions"]["total"],
             "TotalPoints": info["grand_total"],
         })
@@ -498,7 +604,7 @@ def calculate_leaderboard(
     if not rows:
         return pd.DataFrame(columns=[
             "Rank", "Player", "BasePoints", "CaptainBonus",
-            "InsuranceBonus", "PredictionBonus", "TotalPoints",
+            "InsuranceBonus", "SpecialBonus", "PredictionBonus", "TotalPoints",
         ])
 
     lb = (
@@ -626,14 +732,18 @@ def generate_player_summary(
             "PreTournamentCaptain": cap["pre_tournament_captain"] or "",
             "KnockoutCaptain":      cap["knockout_captain"] or "",
             "WorldCupWinnerPick":   pred["world_cup_winner"] or "",
+            "RunnerUpPick":         pred["runner_up"] or "",
+            "BronzeMedalPick":      pred["bronze_winner"] or "",
             "GoldenBootPick":       pred["golden_boot"] or "",
             "DarkHorsePick":        pred["dark_horse"] or "",
+            "FirstKnockedOutPick":  pred["first_knocked_out"] or "",
             "InsuranceStatus":      "Yes" if has_insurance else "No",
             "NinthTeam":            ninth,
             "ResurrectionTeam":     resurrection,
             "BasePoints":           info["base_total"],
             "CaptainBonus":         cap["total"],
             "InsuranceBonus":       info["insurance_bonus"],
+            "SpecialBonus":         info["special_bonus"],
             "PredictionBonus":      pred["total"],
             "TotalPoints":          info["grand_total"],
         })

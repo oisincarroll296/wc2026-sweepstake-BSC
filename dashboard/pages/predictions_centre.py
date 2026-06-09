@@ -1,4 +1,4 @@
-"""Predictions Centre — winner, golden boot, dark horse picks."""
+"""Predictions Centre — winner, golden boot, dark horse picks + new categories."""
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -14,7 +14,7 @@ from dashboard.data import (
 from dashboard.components.ui import page_header, empty_state
 
 
-page_header("Predictions Centre", "World Cup Winner · Golden Boot · Dark Horse picks")
+page_header("Predictions Centre", "World Cup Winner · Runner-Up · Golden Boot · Dark Horse · More")
 
 locked = is_predictions_locked()
 participants = get_participants() or []
@@ -62,6 +62,9 @@ else:
             purchases_df[purchases_df["PurchaseType"] == "PredictionPack"]["Player"].tolist()
         )
 
+    _pick_check_cols = ["WorldCupWinner", "GoldenBoot", "DarkHorse",
+                        "RunnerUp", "BronzeMedal", "FirstKnockedOut"]
+
     def _has_picks(player: str) -> bool:
         if preds_df.empty:
             return False
@@ -69,7 +72,7 @@ else:
         if row.empty:
             return False
         r = row.iloc[0]
-        return any(str(r.get(col, "")).strip() for col in ["WorldCupWinner", "GoldenBoot", "DarkHorse"])
+        return any(str(r.get(col, "")).strip() for col in _pick_check_cols)
 
     rows = []
     for p in sorted(participants):
@@ -100,11 +103,13 @@ if not data or preds_df.empty:
     empty_state("No predictions submitted.")
     st.stop()
 
-col1, col2, col3 = st.columns(3)
 
-def _pick_card(col, title: str, icon: str, picks: dict):
+def _pick_card(col, title: str, icon: str, picks: dict, bonus_label: str = ""):
     with col:
-        st.subheader(f"{icon} {title}")
+        label = f"{icon} {title}"
+        if bonus_label:
+            label += f" <span style='color:#6EE7B7;font-size:0.75rem;font-weight:400'>({bonus_label})</span>"
+        st.markdown(f"<h3 style='margin-bottom:0.5rem'>{label}</h3>", unsafe_allow_html=True)
         if not picks:
             st.markdown(
                 '<div class="card"><span style="color:#9CA3AF">No picks submitted</span></div>',
@@ -123,11 +128,26 @@ def _pick_card(col, title: str, icon: str, picks: dict):
                 unsafe_allow_html=True,
             )
 
-_pick_card(col1, "World Cup Winner", "🏆", data.get("world_cup_winner", {}))
-_pick_card(col2, "Golden Boot",      "👟", data.get("golden_boot", {}))
-_pick_card(col3, "Dark Horse",       "🌟", data.get("dark_horse", {}))
+
+# Row 1: tournament placings
+col1, col2, col3 = st.columns(3)
+_pick_card(col1, "World Cup Winner", "🏆", data.get("world_cup_winner", {}), "+30 pts")
+_pick_card(col2, "Runner-Up",        "🥈", data.get("runner_up", {}),        "+20 pts")
+_pick_card(col3, "Bronze Medal",     "🥉", data.get("bronze_winner", {}),    "+15 pts")
+
+st.divider()
+
+# Row 2: individual & special
+col4, col5, col6 = st.columns(3)
+_pick_card(col4, "Golden Boot",       "👟", data.get("golden_boot", {}),      "+25 pts")
+_pick_card(col5, "Dark Horse",        "🌟", data.get("dark_horse", {}),       "+15/30/40/50 pts")
+_pick_card(col6, "First Knocked Out", "💀", data.get("first_knocked_out", {}), "+20 pts")
 
 st.divider()
 st.subheader("All Picks")
 if not preds_df.empty:
-    st.dataframe(preds_df, use_container_width=True, hide_index=True)
+    _display_cols = [c for c in [
+        "Player", "WorldCupWinner", "RunnerUp", "BronzeMedal",
+        "GoldenBoot", "DarkHorse", "FirstKnockedOut",
+    ] if c in preds_df.columns]
+    st.dataframe(preds_df[_display_cols], use_container_width=True, hide_index=True)

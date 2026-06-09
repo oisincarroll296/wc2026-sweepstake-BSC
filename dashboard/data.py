@@ -113,7 +113,7 @@ def get_prize_leaderboard() -> pd.DataFrame:
     return prize_leaderboard(
         parts, get_assignments(), get_match_stats(),
         get_purchases(), get_captains(), get_predictions(),
-        get_statuses(),
+        get_statuses(), tournament_results=get_tournament_results(),
     )
 
 
@@ -125,7 +125,7 @@ def get_overall_leaderboard() -> pd.DataFrame:
     return overall_leaderboard(
         parts, get_assignments(), get_match_stats(),
         get_purchases(), get_captains(), get_predictions(),
-        get_statuses(),
+        get_statuses(), tournament_results=get_tournament_results(),
     )
 
 
@@ -217,6 +217,21 @@ def get_deadlines() -> dict:
         return json.loads(p.read_text(encoding="utf-8"))
     except Exception:
         return {}
+
+
+@st.cache_data(ttl=30)
+def get_tournament_results() -> dict:
+    """Load tournament_results.json; merge with auto-derived fields from match_stats."""
+    import json
+    p = _ROOT / "data" / "tournament_results.json"
+    tr: dict = {}
+    if p.exists():
+        try:
+            tr = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    # Remove empty strings so scoring engine treats them as absent
+    return {k: v for k, v in tr.items() if v}
 
 
 def save_deadlines(d: dict) -> None:
@@ -346,11 +361,31 @@ def _recalculate_match_stats() -> None:
     if ms.empty:
         return
 
-    # Zero out all derived stat columns
+    # Ensure new columns exist (preserve manual columns if present)
+    for col in ["GroupUpsetWins1", "GroupUpsetWins2", "GroupUpsetWins3",
+                "KnockoutUpsetWins1", "KnockoutUpsetWins2", "KnockoutUpsetWins3",
+                "GroupWins", "KnockoutWins"]:
+        if col not in ms.columns:
+            ms[col] = 0
+    for col in ["ShirtRemovals", "GKGoals", "RedCards", "FirstEliminated",
+                "GroupHatTricks", "KnockoutHatTricks"]:
+        if col not in ms.columns:
+            ms[col] = 0
+
+    # Zero out all auto-derived stat columns (manual columns are NOT zeroed)
     for col in ["GroupGoals", "GroupCleanSheets", "GroupPenaltyWins", "GroupComebackWins",
-                "KnockoutGoals", "KnockoutCleanSheets", "KnockoutPenaltyWins", "KnockoutComebackWins"]:
+                "GroupWins",
+                "KnockoutGoals", "KnockoutCleanSheets", "KnockoutPenaltyWins", "KnockoutComebackWins",
+                "KnockoutWins",
+                "GroupUpsetWins1", "GroupUpsetWins2", "GroupUpsetWins3",
+                "KnockoutUpsetWins1", "KnockoutUpsetWins2", "KnockoutUpsetWins3"]:
         if col in ms.columns:
             ms[col] = 0
+
+    # Build tier map for upset win computation
+    from src.team_database import load_teams as _lt
+    _teams_df = _lt()
+    _tier_map = dict(zip(_teams_df["Team"], _teams_df["Tier"].astype(int))) if not _teams_df.empty else {}
 
     def _int(val, default=0):
         try: return int(float(val or default))
@@ -371,6 +406,7 @@ def _recalculate_match_stats() -> None:
 
         h_goals = _int(res.get("home_goals", 0))
         a_goals = _int(res.get("away_goals", 0))
+        pwin    = str(res.get("penalty_winner", "")).strip()
         pfx = "Group" if is_group else "Knockout"
 
         for team, goals_for, goals_against in [(home, h_goals, a_goals), (away, a_goals, h_goals)]:
@@ -382,7 +418,6 @@ def _recalculate_match_stats() -> None:
                 ms.loc[mask, f"{pfx}CleanSheets"] = ms.loc[mask, f"{pfx}CleanSheets"].astype(int) + 1
 
         # Penalty win (KO only)
-        pwin = str(res.get("penalty_winner", "")).strip()
         if pwin == "home" and not is_group:
             ms.loc[ms["Team"] == home, "KnockoutPenaltyWins"] = (
                 ms.loc[ms["Team"] == home, "KnockoutPenaltyWins"].astype(int) + 1
@@ -390,6 +425,23 @@ def _recalculate_match_stats() -> None:
         elif pwin == "away" and not is_group:
             ms.loc[ms["Team"] == away, "KnockoutPenaltyWins"] = (
                 ms.loc[ms["Team"] == away, "KnockoutPenaltyWins"].astype(int) + 1
+            )
+
+        # Win bonus — any win (normal/extra time or penalties)
+        if pwin == "home":
+            _win_team = home
+        elif pwin == "away":
+            _win_team = away
+        elif h_goals > a_goals:
+            _win_team = home
+        elif a_goals > h_goals:
+            _win_team = away
+        else:
+            _win_team = None  # draw (group stage only)
+        if _win_team:
+            _win_col = f"{pfx}Wins"
+            ms.loc[ms["Team"] == _win_team, _win_col] = (
+                ms.loc[ms["Team"] == _win_team, _win_col].astype(int) + 1
             )
 
         # Comeback wins
@@ -401,6 +453,28 @@ def _recalculate_match_stats() -> None:
             ms.loc[ms["Team"] == away, f"{pfx}ComebackWins"] = (
                 ms.loc[ms["Team"] == away, f"{pfx}ComebackWins"].astype(int) + 1
             )
+
+        # Tier-upset wins — determine match winner then check tier gap
+        if pwin == "home":
+            winner, loser = home, away
+        elif pwin == "away":
+            winner, loser = away, home
+        elif h_goals > a_goals:
+            winner, loser = home, away
+        elif a_goals > h_goals:
+            winner, loser = away, home
+        else:
+            winner, loser = None, None  # group stage draw
+
+        if winner and loser:
+            w_tier = _tier_map.get(winner, 0)
+            l_tier = _tier_map.get(loser, 0)
+            diff = w_tier - l_tier  # positive = winner is a lower/worse tier (upset)
+            if diff in (1, 2, 3):
+                upset_col = f"{pfx}UpsetWins{diff}"
+                mask = ms["Team"] == winner
+                if mask.any():
+                    ms.loc[mask, upset_col] = ms.loc[mask, upset_col].astype(int) + 1
 
     ms.to_csv(_ROOT / "data" / "match_stats.csv", index=False)
 
@@ -630,60 +704,6 @@ def get_insurance_overview() -> dict:
             })
 
     return {"t1_status": t1_status, "holders": holders}
-
-
-@st.cache_data(ttl=300)
-def get_config() -> dict:
-    """Load config.yaml from project root."""
-    import yaml
-    p = _ROOT / "config.yaml"
-    if not p.exists():
-        return {}
-    try:
-        return yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-    except Exception:
-        return {}
-
-
-def get_addon_cost(purchase_type: str) -> float:
-    """Return the configured cost of a purchase type (0 for BuyIn, unknown types)."""
-    cfg = get_config()
-    costs = cfg.get("sweepstake", {}).get("addon_costs", {})
-    return float(costs.get(purchase_type, 0))
-
-
-def get_budget_per_player() -> float:
-    """Return the configured starting budget per player."""
-    cfg = get_config()
-    return float(cfg.get("sweepstake", {}).get("budget_per_player", 0))
-
-
-def get_player_budget_remaining(player: str) -> float:
-    """Return how much add-on budget a player has left."""
-    budget = get_budget_per_player()
-    if budget <= 0:
-        return 0.0
-    purchases = get_purchases()
-    if purchases.empty:
-        return budget
-    player_rows = purchases[purchases["Player"] == player]
-    spent = float(player_rows["PurchaseType"].map(get_addon_cost).sum())
-    return budget - spent
-
-
-def get_all_player_budgets() -> dict[str, dict]:
-    """Return budget summary for all players: {player: {budget, spent, remaining}}."""
-    budget = get_budget_per_player()
-    participants = get_participants()
-    result = {}
-    for p in participants:
-        spent = budget - get_player_budget_remaining(p)
-        result[p] = {
-            "budget":    budget,
-            "spent":     spent,
-            "remaining": budget - spent,
-        }
-    return result
 
 
 DEADLINE_LABELS: dict[str, str] = {

@@ -21,17 +21,20 @@ with tab_scoring:
 |---|---|
 | Goal Scored | +1 |
 | Clean Sheet | +2 |
+| Win | +3 |
 | Penalty Shootout Win | +3 |
 | Comeback Win | +3 |
+| Hat Trick | +10 |
 | Group Winner | +3 |
 """)
-    st.caption("**Comeback Win**: won in normal or extra time after going behind. Penalty wins don't count as comebacks.")
+    st.caption("**Win**: any win (normal time, extra time, or penalties). **Comeback Win**: won after going behind in normal/extra time — does not apply to penalty wins. Win and Comeback Win bonuses stack. Hat trick bonuses also stack with win.")
 
     st.subheader("Tournament Progression")
-    st.caption("Bonuses are cumulative — a team that wins the tournament earns all stage bonuses.")
+    st.caption("Each bonus is awarded **for reaching** that round. Bonuses are cumulative — a team reaching the QF earns the R32 + R16 + QF bonuses.")
     st.markdown("""
 | Round | Tier 1 | Tier 2 | Tier 3 | Tier 4 |
 |---|---|---|---|---|
+| Round of 32 | +1 | +2 | +5 | +8 |
 | Round of 16 | +2 | +4 | +8 | +12 |
 | Quarter Final | +4 | +8 | +15 | +25 |
 | Semi Final | +8 | +12 | +20 | +30 |
@@ -40,7 +43,44 @@ with tab_scoring:
 """)
 
     with st.expander("Example: Tier 3 team wins the World Cup"):
-        st.markdown("8 + 15 + 20 + 32 + 46 = **121 progression points**, plus all match stats on top.")
+        st.markdown("5 + 8 + 15 + 20 + 32 + 46 = **126 progression points**, plus all match stats on top.")
+
+    st.subheader("Upset Win Bonuses")
+    st.caption("Awarded per win against a team in a higher tier — auto-calculated from results.")
+    st.markdown("""
+| Win Against | Bonus |
+|---|---|
+| Beat a team **1 tier above** (e.g. Tier 3 beats Tier 2) | +15 |
+| Beat a team **2 tiers above** (e.g. Tier 4 beats Tier 2) | +30 |
+| Beat a team **3 tiers above** (e.g. Tier 4 beats Tier 1) | +50 |
+""")
+
+    st.subheader("Special Event Bonuses")
+    st.caption("Manually entered by the admin with proof where noted.")
+    st.markdown("""
+| Event | Points |
+|---|---|
+| Player removes shirt to celebrate *(proof required)* | +25 |
+| Goalkeeper scores a goal | +75 |
+| Red card received | −15 |
+| First team knocked out of the tournament | +35 *(to owners)* |
+""")
+
+    st.subheader("Prediction Pack Bonuses")
+    st.markdown("""
+| Prediction | Points |
+|---|---|
+| World Cup Winner correct | +30 |
+| Runner-Up (2nd place) correct | +20 |
+| Bronze Medal (3rd place) correct | +15 |
+| Golden Boot correct | +25 |
+| First Knocked Out correct | +20 |
+| Dark Horse reaches QF | +15 |
+| Dark Horse reaches SF | +30 |
+| Dark Horse reaches Final | +40 |
+| Dark Horse wins tournament | +50 |
+""")
+    st.caption("Dark Horse bonuses are cumulative. A Dark Horse that wins earns 15+30+40+50 = **135 pts** total.")
 
 # ── PURCHASES ─────────────────────────────────────────────────────────────────
 with tab_purchases:
@@ -52,9 +92,9 @@ with tab_purchases:
         '<div style="color:#E5E7EB;font-size:0.84rem;line-height:1.65">'
         '1. Send the money to the <strong style="color:#D4A017">Shared Revolut Pocket</strong> '
         'and include what you\'re buying in the transaction message<br>'
-        '2. <strong>Ninth Team</strong> &amp; <strong>Resurrection</strong> — teams are randomly drawn, '
-        'no selection needed<br>'
-        '3. <strong>Prediction Pack</strong> — send your picks (World Cup winner, Golden Boot, Dark Horse) '
+        '2. <strong>Ninth Team</strong>  — teams are randomly drawn, &amp; <strong>Resurrection</strong> you choose'
+        '<br>'
+        '3. <strong>Prediction Pack</strong> — send your picks (World Cup winner, Golden Boot, Dark Horse, etc.) '
         'in a separate message<br>'
         '4. <strong>Captains</strong> — send your Pre-Tournament and Knockout captain picks separately'
         '</div></div>',
@@ -73,9 +113,10 @@ with tab_purchases:
         st.markdown(
             '<div class="card"><h4 style="color:#D4A017;margin:0">Prediction Pack — €5</h4>'
             '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.4rem 0 0">'
-            'Unlocks three predictions: World Cup Winner (+30 pts), '
-            'Golden Boot (+25 pts), and a Dark Horse pick (cumulative bonuses up to +135 pts). '
-            'Lock: 1 hour before opening match.</p></div>',
+            'Unlocks six predictions: World Cup Winner (+30), Runner-Up (+20), '
+            'Bronze Medal (+15), Golden Boot (+25), Dark Horse (up to +135 cumulative), '
+            'and First Knocked Out (+20). '
+            '<strong style="color:#D4A017">Lock: 19 June</strong> (before first group stage games kick off).</p></div>',
             unsafe_allow_html=True,
         )
         st.markdown(
@@ -86,14 +127,23 @@ with tab_purchases:
             'All mulligans processed in batches depending on how many are bought.</p></div>',
             unsafe_allow_html=True,
         )
+        st.markdown(
+            '<div class="card"><h4 style="color:#D4A017;margin:0">Complete Redraw — €6</h4>'
+            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.4rem 0 0">'
+            'Full redraw of all 8 teams. Includes tier-balancing. '
+            '<strong style="color:#D4A017">Must be completed before the first game kicks off.</strong></p></div>',
+            unsafe_allow_html=True,
+        )
 
     with col2:
         st.markdown(
             '<div class="card"><h4 style="color:#D4A017;margin:0">Insurance — €2</h4>'
             '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.4rem 0 0">'
-            'If either of your original Tier 1 teams is eliminated in the Group Stage, '
-            'you receive <strong>+25 points</strong>. Triggers for each team knocked out. '
-            'Round of 16 elimination does not qualify.</p></div>',
+            'If either of your original Tier 1 teams is eliminated in the '
+            '<strong>Group Stage or Round of 32</strong>, '
+            'you receive <strong>+25 points</strong>. Triggers for each team knocked out early '
+            '(max +50 if both Tier 1 teams exit before R16). '
+            'R16 or later does not qualify.</p></div>',
             unsafe_allow_html=True,
         )
         st.markdown(
@@ -107,7 +157,8 @@ with tab_purchases:
         st.markdown(
             '<div class="card"><h4 style="color:#D4A017;margin:0">Resurrection — €5</h4>'
             '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.4rem 0 0">'
-            'Replace one group-eliminated team with a surviving team of the same tier. '
+            'You <strong>choose which of your eliminated teams</strong> gets swapped out. '
+            'A replacement is randomly drawn from surviving teams of the same tier. '
             'Replacement earns knockout points only. Maximum one per player.</p></div>',
             unsafe_allow_html=True,
         )
@@ -137,18 +188,23 @@ with tab_captains:
             '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.5rem 0 0">Free · Must be one of your original 8 teams · '
             'Selected before the opening match</p>'
             '<p style="color:#F5F5F5;margin:0.5rem 0 0">'
-            'That team earns <strong>1.5× all points</strong> throughout the entire tournament '
-            '(+50% bonus added).</p></div>',
+            'That team earns <strong>1.5× every point it scores</strong> across the entire tournament — '
+            'goals, clean sheets, wins, hat tricks, penalty/comeback wins, upset bonuses, '
+            'progression bonuses, and special events all multiplied. '
+            'The +50% bonus is applied to the team\'s total points earned in both the group stage and knockout rounds.</p></div>',
             unsafe_allow_html=True,
         )
     with col2:
         st.markdown(
             '<div class="card-gold"><h4 style="color:#D4A017;margin:0">Knockout Captain</h4>'
             '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.5rem 0 0">Free · Any surviving team you own · '
-            'Selected before the Round of 16</p>'
+            'Selected before the Round of 32</p>'
             '<p style="color:#F5F5F5;margin:0.5rem 0 0">'
-            'That team earns <strong>1.5× knockout-stage points</strong> from Round of 16 onward '
-            '(+50% bonus added). Cannot be the same team as your Pre-Tournament Captain.</p></div>',
+            'That team earns <strong>1.5× every point it scores in the knockout rounds</strong> (Round of 32 onward) — '
+            'goals, clean sheets, wins, hat tricks, penalty/comeback wins, upset bonuses, and '
+            'progression bonuses all multiplied. '
+            'Special event bonuses (shirt removals, GK goals, red cards, first eliminated) are excluded from this multiplier. '
+            'Cannot be the same team as your Pre-Tournament Captain.</p></div>',
             unsafe_allow_html=True,
         )
 
@@ -169,7 +225,7 @@ with tab_prizes:
     st.markdown("""
 **Prize Leaderboard** — Paid players only. These are the standings that determine prize money.
 
-**Overall Leaderboard** — All 13 players. Players without a Buy In are shown greyed out and cannot win prizes.
+**Overall Leaderboard** — All 14 players. Players without a Buy In are shown greyed out and cannot win prizes.
 """)
 
 # ── TIEBREAKERS ───────────────────────────────────────────────────────────────

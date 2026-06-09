@@ -46,7 +46,8 @@ def _save_statuses(df: pd.DataFrame):
 # ── Tabs ──────────────────────────────────────────────────────────────────
 tabs = st.tabs([
     "Draw Events", "Purchases", "Picks",
-    "Locking", "Results Entry",
+    "Locking", "Results Entry", "Special Events",
+    "Tournament Results",
     "WhatsApp", "Draw Broadcast", "Deadlines", "Snapshots",
 ])
 
@@ -200,19 +201,15 @@ with tabs[1]:
     st.caption("Record a payment received via the Shared Revolut Pocket.")
 
     from src.competition import PRICES as _PRICES
-    from dashboard.data import (
-        get_participants as _get_parts, get_budget_per_player,
-        get_player_budget_remaining, get_addon_cost,
-    )
     _price_labels = {k: f"{k}  (€{int(v)})" for k, v in _PRICES.items()}
-    _budget_enabled = get_budget_per_player() > 0
 
     with st.form("add_purchase"):
-        players = _get_parts() or []
+        from dashboard.data import get_participants
+        players = get_participants() or []
         add_player = st.selectbox("Player", players or ["—"])
         add_type   = st.selectbox("Type", list(_price_labels.keys()), format_func=lambda k: _price_labels[k])
         add_ref    = st.text_input("Payment Reference (optional)", placeholder="e.g. Oisin - BUY IN")
-        add_sel    = st.text_input("Eliminated team (Resurrection only)", placeholder="e.g. Spain")
+        add_sel    = st.text_input("Resurrection — player's eliminated team to swap out", placeholder="e.g. Spain (you choose which of your eliminated teams to replace)")
         submitted  = st.form_submit_button("Add Purchase", type="primary")
 
         if submitted and add_player and add_player != "—":
@@ -235,36 +232,7 @@ with tabs[1]:
             except Exception as exc:
                 st.error(f"Error: {exc}")
 
-    # Budget info for selected player (outside form so it refreshes live)
-    if _budget_enabled and players:
-        _sel_player = players[0] if players else None
-        if _sel_player:
-            _remaining = get_player_budget_remaining(_sel_player)
-            _total_budget = get_budget_per_player()
-            _spent = _total_budget - _remaining
-            _col1, _col2, _col3 = st.columns(3)
-            _col1.metric("Add-on Budget", f"€{int(_total_budget)}")
-            _col2.metric("Spent", f"€{_spent:.0f}")
-            _col3.metric("Remaining", f"€{_remaining:.0f}",
-                         delta=f"€{_remaining:.0f}",
-                         delta_color="normal" if _remaining >= 0 else "inverse")
-
     st.divider()
-
-    # Budget overview table
-    if _budget_enabled:
-        st.subheader("Budget Overview")
-        from dashboard.data import get_all_player_budgets
-        _budgets = get_all_player_budgets()
-        if _budgets:
-            _brows = [
-                {"Player": p, "Budget": f"€{int(d['budget'])}",
-                 "Spent": f"€{d['spent']:.0f}", "Remaining": f"€{d['remaining']:.0f}",
-                 "Status": "⚠️ Over" if d['remaining'] < 0 else ("✓ OK" if d['spent'] > 0 else "—")}
-                for p, d in sorted(_budgets.items())
-            ]
-            st.dataframe(pd.DataFrame(_brows), use_container_width=True, hide_index=True)
-        st.divider()
 
     # Current purchase log
     st.subheader("Purchase Log")
@@ -303,7 +271,11 @@ with tabs[2]:
     if _picks_df.empty:
         st.warning("players.csv not found or empty.")
     else:
-        _pick_cols = ["PreTournamentCaptain", "KnockoutCaptain", "WorldCupWinner", "GoldenBoot", "DarkHorse"]
+        _pick_cols = [
+            "PreTournamentCaptain", "KnockoutCaptain",
+            "WorldCupWinner", "RunnerUp", "BronzeMedal",
+            "GoldenBoot", "DarkHorse", "FirstKnockedOut",
+        ]
         for col in _pick_cols:
             if col not in _picks_df.columns:
                 _picks_df[col] = ""
@@ -358,12 +330,26 @@ with tabs[2]:
                 new_wcw = st.selectbox("Any team", [""] + _all_teams, index=wcw_idx,
                                        key="wcw", label_visibility="collapsed")
             with pd2:
+                st.markdown("**Runner-Up**")
+                cur_ru = _v("RunnerUp")
+                ru_idx = ([""] + _all_teams).index(cur_ru) if cur_ru in ([""] + _all_teams) else 0
+                new_ru = st.selectbox("Any team", [""] + _all_teams, index=ru_idx,
+                                      key="ru", label_visibility="collapsed")
+            with pd3:
+                st.markdown("**Bronze Medal**")
+                cur_bm = _v("BronzeMedal")
+                bm_idx = ([""] + _all_teams).index(cur_bm) if cur_bm in ([""] + _all_teams) else 0
+                new_bm = st.selectbox("Any team", [""] + _all_teams, index=bm_idx,
+                                      key="bm", label_visibility="collapsed")
+
+            pd4, pd5, pd6 = st.columns(3)
+            with pd4:
                 st.markdown("**Golden Boot**")
                 new_gb = st.text_input("Player name (free text)",
                                        value=_v("GoldenBoot"), key="gb",
                                        label_visibility="collapsed",
                                        placeholder="e.g. Mbappé")
-            with pd3:
+            with pd5:
                 st.markdown("**Dark Horse**")
                 st.caption("Tier 3/4 team they don't own")
                 cur_dh = _v("DarkHorse")
@@ -371,6 +357,13 @@ with tabs[2]:
                 new_dh = st.selectbox("Tier 3 or 4, not already owned",
                                       [""] + _low_tier, index=dh_idx,
                                       key="dh", label_visibility="collapsed")
+            with pd6:
+                st.markdown("**First Knocked Out**")
+                st.caption("Any team — first eliminated from the tournament")
+                cur_fko = _v("FirstKnockedOut")
+                fko_idx = ([""] + _all_teams).index(cur_fko) if cur_fko in ([""] + _all_teams) else 0
+                new_fko = st.selectbox("Any team", [""] + _all_teams, index=fko_idx,
+                                       key="fko", label_visibility="collapsed")
 
             if st.form_submit_button("Save picks", type="primary"):
                 # Validate same-captain rule
@@ -380,8 +373,11 @@ with tabs[2]:
                     _picks_df.loc[_row_mask, "PreTournamentCaptain"] = new_ptc
                     _picks_df.loc[_row_mask, "KnockoutCaptain"]      = new_kc
                     _picks_df.loc[_row_mask, "WorldCupWinner"]       = new_wcw
+                    _picks_df.loc[_row_mask, "RunnerUp"]             = new_ru
+                    _picks_df.loc[_row_mask, "BronzeMedal"]          = new_bm
                     _picks_df.loc[_row_mask, "GoldenBoot"]           = new_gb
                     _picks_df.loc[_row_mask, "DarkHorse"]            = new_dh
+                    _picks_df.loc[_row_mask, "FirstKnockedOut"]      = new_fko
                     _picks_df.to_csv(_players_path, index=False)
                     st.success(f"Picks saved for {_player_sel}.")
                     _refresh()
@@ -734,9 +730,164 @@ with tabs[4]:
                     st.error(f"{exc}")
 
 # ─────────────────────────────────────────────
-# Tab 5: WhatsApp Update
+# Tab 5: Special Events
 # ─────────────────────────────────────────────
 with tabs[5]:
+    st.subheader("Special Events")
+    st.caption(
+        "Log match events that are awarded manually: hat tricks, shirt-removal celebrations, "
+        "goalkeeper goals, red cards, and first-team-eliminated. "
+        "These are preserved when match stats are recalculated."
+    )
+
+    from src.scoring_engine import load_match_stats as _lms
+    from src.team_database import load_teams as _lts
+
+    _se_teams_df = _lts()
+    _se_team_list = sorted(_se_teams_df["Team"].tolist()) if not _se_teams_df.empty else []
+
+    with st.form("special_events_form"):
+        _se_team = st.selectbox("Team", _se_team_list, key="se_team")
+
+        _se_ms = _lms()
+        _se_ex: dict = {}
+        if not _se_ms.empty and _se_team:
+            _row = _se_ms[_se_ms["Team"] == _se_team]
+            if not _row.empty:
+                _se_ex = _row.iloc[0].to_dict()
+
+        def _sei(col):
+            v = _se_ex.get(col, 0)
+            try: return int(float(v)) if str(v) not in ("", "nan") else 0
+            except Exception: return 0
+
+        st.markdown("**Group Stage Hat Tricks** (+10 per hat trick)")
+        _ht_grp = st.number_input("Count", 0, 20, _sei("GroupHatTricks"), key="se_ht_grp",
+                                  help="Any player from this team scored a hat trick in the group stage")
+
+        st.markdown("**Knockout Hat Tricks** (+10 per hat trick)")
+        _ht_ko = st.number_input("Count", 0, 10, _sei("KnockoutHatTricks"), key="se_ht_ko",
+                                 help="Any player from this team scored a hat trick in the knockout rounds")
+
+        st.markdown("**Shirt Removal Celebrations** (+25 per incident)")
+        _shirts = st.number_input("Count", 0, 20, _sei("ShirtRemovals"), key="se_shirts",
+                                  help="Player from this team removes shirt to celebrate a goal/win")
+
+        st.markdown("**Goalkeeper Goals** (+75 per goal)")
+        _gk = st.number_input("Count", 0, 10, _sei("GKGoals"), key="se_gk",
+                               help="Goal scored by a goalkeeper")
+
+        st.markdown("**Red Cards** (−15 per card)")
+        _red = st.number_input("Count", 0, 20, _sei("RedCards"), key="se_red",
+                               help="Total red cards received by this team across the tournament")
+
+        st.markdown("**First Team Eliminated** (+35 for owners)")
+        _first_e = st.checkbox("This team was the first knocked out of the tournament",
+                               value=bool(_sei("FirstEliminated")), key="se_first_e")
+
+        if st.form_submit_button("Save Special Events", type="primary") and _se_team:
+            try:
+                _se_ms2 = _lms()
+                _mask = _se_ms2["Team"] == _se_team
+                if not _mask.any():
+                    st.error(f"Team {_se_team!r} not found in match_stats.csv")
+                else:
+                    # If marking first eliminated, clear any previous flag first
+                    if _first_e and "FirstEliminated" in _se_ms2.columns:
+                        _se_ms2["FirstEliminated"] = 0
+                    for _col, _val in [
+                        ("GroupHatTricks", _ht_grp),
+                        ("KnockoutHatTricks", _ht_ko),
+                        ("ShirtRemovals", _shirts),
+                        ("GKGoals", _gk),
+                        ("RedCards", _red),
+                        ("FirstEliminated", int(_first_e)),
+                    ]:
+                        if _col not in _se_ms2.columns:
+                            _se_ms2[_col] = 0
+                        _se_ms2.loc[_mask, _col] = _val
+                    _se_ms2.to_csv(DATA / "match_stats.csv", index=False)
+                    st.success(f"Special events saved for {_se_team}.")
+                    _refresh()
+            except Exception as exc:
+                st.error(f"Error: {exc}")
+
+    st.divider()
+    st.markdown("**Current special event totals**")
+    _se_cur = _lms()
+    _se_cols = ["GroupHatTricks", "KnockoutHatTricks", "ShirtRemovals", "GKGoals", "RedCards", "FirstEliminated"]
+    _se_display_cols = [c for c in _se_cols if c in _se_cur.columns]
+    if not _se_cur.empty and _se_display_cols:
+        _se_show = _se_cur[["Team"] + _se_display_cols].copy()
+        _se_show = _se_show[(_se_show[_se_display_cols] != 0).any(axis=1)]
+        if _se_show.empty:
+            st.caption("No special events logged yet.")
+        else:
+            st.dataframe(_se_show, use_container_width=True, hide_index=True)
+    else:
+        st.caption("No special events logged yet.")
+
+
+# ─────────────────────────────────────────────
+# Tab 6: Tournament Results
+# ─────────────────────────────────────────────
+with tabs[6]:
+    import json as _json
+    st.subheader("Tournament Results")
+    st.caption(
+        "Set the final outcomes used for prediction bonus calculations. "
+        "Leave fields blank until the result is known. "
+        "First Knocked Out is auto-derived from the Special Events tab."
+    )
+
+    _tr_path = DATA / "tournament_results.json"
+    _tr_cur: dict = {}
+    if _tr_path.exists():
+        try:
+            _tr_cur = _json.loads(_tr_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    from src.team_database import load_teams as _lts2
+    _tr_teams = sorted(_lts2()["Team"].tolist())
+
+    with st.form("tournament_results_form"):
+        _tr_c1, _tr_c2 = st.columns(2)
+        with _tr_c1:
+            _tr_winner_cur = _tr_cur.get("world_cup_winner", "")
+            _tr_winner_idx = ([""] + _tr_teams).index(_tr_winner_cur) if _tr_winner_cur in _tr_teams else 0
+            _tr_winner = st.selectbox("World Cup Winner",  [""] + _tr_teams, index=_tr_winner_idx, key="tr_w")
+
+            _tr_ru_cur = _tr_cur.get("runner_up", "")
+            _tr_ru_idx = ([""] + _tr_teams).index(_tr_ru_cur) if _tr_ru_cur in _tr_teams else 0
+            _tr_ru = st.selectbox("Runner-Up (2nd place)", [""] + _tr_teams, index=_tr_ru_idx, key="tr_ru")
+        with _tr_c2:
+            _tr_bronze_cur = _tr_cur.get("bronze_winner", "")
+            _tr_bronze_idx = ([""] + _tr_teams).index(_tr_bronze_cur) if _tr_bronze_cur in _tr_teams else 0
+            _tr_bronze = st.selectbox("Bronze Medal (3rd place)", [""] + _tr_teams, index=_tr_bronze_idx, key="tr_bz")
+
+            _tr_gb_cur = _tr_cur.get("golden_boot_winner", "")
+            _tr_gb = st.text_input("Golden Boot Winner (player name)",
+                                   value=_tr_gb_cur, key="tr_gb",
+                                   placeholder="e.g. Mbappé")
+
+        if st.form_submit_button("Save Tournament Results", type="primary"):
+            _tr_new = {
+                "world_cup_winner":  _tr_winner,
+                "runner_up":         _tr_ru,
+                "bronze_winner":     _tr_bronze,
+                "golden_boot_winner": _tr_gb,
+            }
+            _tr_path.write_text(_json.dumps(_tr_new, indent=2), encoding="utf-8")
+            st.success("Tournament results saved.")
+            _refresh()
+            st.rerun()
+
+
+# ─────────────────────────────────────────────
+# Tab 7: WhatsApp Update
+# ─────────────────────────────────────────────
+with tabs[7]:
     st.subheader("Generate WhatsApp Update")
     st.caption("Generates a formatted standings update to paste into your WhatsApp group.")
 
@@ -757,9 +908,9 @@ with tabs[5]:
                 st.error(f"{exc}")
 
 # ─────────────────────────────────────────────
-# Tab 6: Draw Broadcast
+# Tab 8: Draw Broadcast
 # ─────────────────────────────────────────────
-with tabs[6]:
+with tabs[8]:
     st.subheader("Generate Draw Broadcast")
     st.caption("Generates a formatted draw announcement to paste into your WhatsApp group.")
 
@@ -817,9 +968,9 @@ with tabs[6]:
         st.success("Cache cleared — scores will reload on next page view.")
 
 # ─────────────────────────────────────────────
-# Tab 7: Deadlines
+# Tab 9: Deadlines
 # ─────────────────────────────────────────────
-with tabs[7]:
+with tabs[9]:
     import json
     from datetime import datetime, timezone, timedelta, date, time as dtime
     from dashboard.data import get_deadlines, save_deadlines, countdown, DEADLINE_LABELS
@@ -872,9 +1023,9 @@ with tabs[7]:
             st.rerun()
 
 # ─────────────────────────────────────────────
-# Tab 8: Snapshots
+# Tab 10: Snapshots
 # ─────────────────────────────────────────────
-with tabs[8]:
+with tabs[10]:
     import shutil
     from datetime import datetime as _dt
 

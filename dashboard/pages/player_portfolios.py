@@ -77,6 +77,7 @@ base_total    = result.get("base_total", 0.0)
 captain_info  = result.get("captain", {})
 captain_bonus = captain_info.get("total", 0.0)
 insurance_pts = result.get("insurance_bonus", 0.0)
+special_bonus = result.get("special_bonus", 0.0)
 pred_info     = result.get("predictions", {})
 pred_total    = pred_info.get("total", 0.0)
 
@@ -102,6 +103,9 @@ st.markdown(
     f'<div style="background:#0D1B2A;border-radius:6px;padding:0.35rem 0.7rem;text-align:center">'
     f'<div style="color:#9CA3AF;font-size:0.68rem">INSURANCE</div>'
     f'<div style="color:{"#6EE7B7" if insurance_pts > 0 else ("#D4A017" if has_ins else "#9CA3AF")};font-weight:700;font-size:1.05rem">+{insurance_pts:.0f}</div></div>'
+    f'<div style="background:#0D1B2A;border-radius:6px;padding:0.35rem 0.7rem;text-align:center">'
+    f'<div style="color:#9CA3AF;font-size:0.68rem">SPECIAL</div>'
+    f'<div style="color:{"#6EE7B7" if special_bonus > 0 else ("#F87171" if special_bonus < 0 else "#9CA3AF")};font-weight:700;font-size:1.05rem">{special_bonus:+.0f}</div></div>'
     f'<div style="background:#0D1B2A;border-radius:6px;padding:0.35rem 0.7rem;text-align:center">'
     f'<div style="color:#9CA3AF;font-size:0.68rem">PREDICTIONS</div>'
     f'<div style="color:{"#6EE7B7" if pred_total > 0 else "#9CA3AF"};font-weight:700;font-size:1.05rem">+{pred_total:.0f}</div></div>'
@@ -149,6 +153,7 @@ _CHIP = (
 _GS_BG, _GS_FG   = "#253547", "#93C5FD"   # blue tint — group stage
 _KO_BG, _KO_FG   = "#1A3325", "#6EE7B7"   # green tint — knockout
 _PR_BG, _PR_FG   = "#2D1F3D", "#C4B5FD"   # purple — progression
+_SP_BG, _SP_FG   = "#2D1A2A", "#F472B6"   # pink — special events
 
 def _breakdown_html(breakdown: dict) -> str:
     """Return an HTML string of coloured chips for the score breakdown."""
@@ -190,7 +195,27 @@ def _breakdown_html(breakdown: dict) -> str:
             rnd = key.replace("Progression_", "")
             prog_chips.append(chip(f"📈 {rnd} +{pts:.0f}", _PR_BG, _PR_FG))
 
-    all_chips = gs_chips + ko_chips + prog_chips
+    # Upset win chips
+    for diff, label in [(1, "1T"), (2, "2T"), (3, "3T")]:
+        for stage, prefix in [("Group", "GS"), ("Knockout", "KO")]:
+            col = f"{stage}UpsetWins{diff}"
+            pts = breakdown.get(col, 0)
+            if pts:
+                count = int(pts // {1: 15, 2: 30, 3: 50}[diff])
+                ko_chips.append(chip(f"⚡ {count}×{label} upset +{pts:.0f}", _KO_BG, _KO_FG))
+
+    sp_chips = []
+    for key, label, icon in [
+        ("ShirtRemovals", "shirt", "👕"),
+        ("GKGoals",       "GK goal", "🥅"),
+        ("RedCards",      "red card", "🟥"),
+        ("FirstEliminated", "1st out", "💀"),
+    ]:
+        pts = breakdown.get(key, 0)
+        if pts:
+            sp_chips.append(chip(f"{icon} {label} {pts:+.0f}", _SP_BG, _SP_FG))
+
+    all_chips = gs_chips + ko_chips + prog_chips + sp_chips
     if not all_chips:
         return ""
     return (
@@ -219,8 +244,9 @@ with col_teams:
             calculate_team_points(team, match_stats, tier) if not match_stats.empty
             else {"group_stage": 0, "knockout": 0, "total": 0}
         )
-        gs_pts = tp.get("group_stage", 0)
-        ko_pts = tp.get("knockout", 0)
+        gs_pts    = tp.get("group_stage", 0)
+        ko_pts    = tp.get("knockout", 0)
+        sp_pts    = tp.get("special", 0)
         total_pts = tp.get("total", 0)
         eliminated = _is_eliminated(rnd)
         is_pre_cap = team == pre_cap_team
@@ -271,7 +297,7 @@ with col_teams:
             f'</div>'
             f'<div style="text-align:right">'
             f'<div style="color:#F5F5F5;font-weight:700;font-size:1.0rem">{total_pts:.0f} pts</div>'
-            f'<div style="color:#9CA3AF;font-size:0.7rem">Grp {gs_pts:.0f} + KO {ko_pts:.0f}{bonus_html}</div>'
+            f'<div style="color:#9CA3AF;font-size:0.7rem">Grp {gs_pts:.0f} · KO {ko_pts:.0f}{"· Sp " + f"{sp_pts:+.0f}" if sp_pts else ""}{bonus_html}</div>'
             f'</div>'
             f'</div>'
             f'{bd_html}'
@@ -400,6 +426,47 @@ with col_extras:
             unsafe_allow_html=True,
         )
 
+    # ── Special Events ────────────────────────────────────────────────────
+    if special_bonus != 0:
+        st.divider()
+        st.subheader("✨ Special Events")
+        _sp_map = [
+            ("ShirtRemovals",  "Shirt Removals",        "+25 each",  25,  False),
+            ("GKGoals",        "Goalkeeper Goals",       "+75 each",  75,  False),
+            ("RedCards",       "Red Cards",              "-15 each",  -15, True),
+            ("FirstEliminated","First Team Eliminated",  "+35",       35,  False),
+        ]
+        for _col, _label, _note, _per, _negative in _sp_map:
+            if match_stats.empty:
+                continue
+            _totals = 0
+            for _team in eff["group_stage"] + [t for t in eff["knockout"] if t not in eff["group_stage"]]:
+                _row = match_stats[match_stats["Team"] == _team]
+                if not _row.empty:
+                    _v = int(float(_row.iloc[0].get(_col, 0) or 0))
+                    _totals += _v
+            if _totals == 0:
+                continue
+            _earned = _totals * _per
+            _c = "#F87171" if _negative else "#6EE7B7"
+            st.markdown(
+                f'<div class="card" style="margin-bottom:0.35rem;display:flex;'
+                f'justify-content:space-between;align-items:center">'
+                f'<div><div style="color:#F5F5F5;font-weight:600;font-size:0.88rem">{_label}</div>'
+                f'<div style="color:#9CA3AF;font-size:0.7rem">{_totals}× · {_note}</div></div>'
+                f'<div style="color:{_c};font-weight:700;font-size:1.05rem">{_earned:+.0f}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        sp_col = "#6EE7B7" if special_bonus > 0 else "#F87171"
+        st.markdown(
+            f'<div class="card-gold" style="display:flex;justify-content:space-between">'
+            f'<span style="color:#D4A017;font-size:0.85rem">Total Special Bonus</span>'
+            f'<span style="color:{sp_col};font-weight:700;font-size:1.1rem">{special_bonus:+.0f}</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
     # Ninth / Resurrection
     ninth = _sel("NinthTeam")
     resur = _sel("Resurrection")
@@ -423,15 +490,21 @@ with col_extras:
         st.markdown('<div class="card"><span style="color:#9CA3AF">🔒 Hidden until prediction lock</span></div>', unsafe_allow_html=True)
     else:
         if not predictions.empty and player in predictions["Player"].values:
-            pred_row = predictions[predictions["Player"] == player].iloc[0]
+            pred_row  = predictions[predictions["Player"] == player].iloc[0]
             pp_winner = str(pred_row.get("WorldCupWinner", "") or "").strip() or "—"
-            pp_golden = str(pred_row.get("GoldenBoot", "") or "").strip() or "—"
-            pp_dark   = str(pred_row.get("DarkHorse", "") or "").strip() or "—"
+            pp_ru     = str(pred_row.get("RunnerUp",       "") or "").strip() or "—"
+            pp_bronze = str(pred_row.get("BronzeMedal",    "") or "").strip() or "—"
+            pp_golden = str(pred_row.get("GoldenBoot",     "") or "").strip() or "—"
+            pp_fko    = str(pred_row.get("FirstKnockedOut","") or "").strip() or "—"
+            pp_dark   = str(pred_row.get("DarkHorse",      "") or "").strip() or "—"
         else:
-            pp_winner = pp_golden = pp_dark = "—"
+            pp_winner = pp_ru = pp_bronze = pp_golden = pp_fko = pp_dark = "—"
 
         winner_bonus = pred_info.get("winner_bonus", 0.0)
+        ru_bonus     = pred_info.get("runner_up_bonus", 0.0)
+        bz_bonus     = pred_info.get("bronze_bonus", 0.0)
         gb_bonus     = pred_info.get("golden_boot_bonus", 0.0)
+        fko_bonus    = pred_info.get("first_knocked_out_bonus", 0.0)
         dh_bonus     = pred_info.get("dark_horse_bonus", 0.0)
 
         # Dark horse current round
@@ -441,36 +514,39 @@ with col_extras:
 
         DARK_HORSE_NEXT = {"": "QF (+15)", "QF": "SF (+30)", "SF": "Final (+40)", "Final": "Win (+50)"}
 
-        for label, pick, earned, max_pts, note in [
-            ("World Cup Winner", pp_winner, winner_bonus, 30, f"+30 pts if correct"),
-            ("Golden Boot",      pp_golden, gb_bonus,     25, f"+25 pts if correct"),
+        # Fixed predictions (winner, runner-up, bronze, golden boot, first KO)
+        for label, pick, earned, max_pts in [
+            ("World Cup Winner", pp_winner, winner_bonus, 30),
+            ("Runner-Up",        pp_ru,     ru_bonus,     20),
+            ("Bronze Medal",     pp_bronze, bz_bonus,     15),
+            ("Golden Boot",      pp_golden, gb_bonus,     25),
+            ("First Knocked Out",pp_fko,    fko_bonus,    20),
         ]:
             col_pts = "#6EE7B7" if earned > 0 else "#9CA3AF"
             status  = f"+{earned:.0f} ✓" if earned > 0 else f"0 / {max_pts}"
             st.markdown(
-                f'<div class="card" style="margin-bottom:0.4rem">'
+                f'<div class="card" style="margin-bottom:0.3rem">'
                 f'<div style="display:flex;justify-content:space-between;align-items:center">'
-                f'<div><div style="color:#9CA3AF;font-size:0.72rem">{label}</div>'
-                f'<div style="color:#F5F5F5;font-weight:600">{pick}</div>'
-                f'<div style="color:#9CA3AF;font-size:0.7rem">{note}</div></div>'
-                f'<div style="color:{col_pts};font-weight:700;font-size:1.05rem">{status}</div>'
+                f'<div><div style="color:#9CA3AF;font-size:0.7rem">{label}</div>'
+                f'<div style="color:#F5F5F5;font-weight:600;font-size:0.88rem">{pick}</div></div>'
+                f'<div style="color:{col_pts};font-weight:700;font-size:1.0rem">{status}</div>'
                 f'</div></div>',
                 unsafe_allow_html=True,
             )
 
-        # Dark horse with progressive bonus display
+        # Dark horse with progressive milestone bars
         dh_next = DARK_HORSE_NEXT.get(dh_rnd, "") if dh_rnd in DARK_HORSE_NEXT else ""
         dh_status_txt = ROUND_LABELS.get(dh_rnd, "Active") if dh_rnd else "Group Stage / Not yet reached"
         dh_col = "#6EE7B7" if dh_bonus > 0 else "#9CA3AF"
         st.markdown(
-            f'<div class="card" style="margin-bottom:0.4rem">'
+            f'<div class="card" style="margin-bottom:0.3rem">'
             f'<div style="display:flex;justify-content:space-between;align-items:flex-start">'
-            f'<div><div style="color:#9CA3AF;font-size:0.72rem">Dark Horse</div>'
-            f'<div style="color:#F5F5F5;font-weight:600">{pp_dark}</div>'
+            f'<div><div style="color:#9CA3AF;font-size:0.7rem">Dark Horse</div>'
+            f'<div style="color:#F5F5F5;font-weight:600;font-size:0.88rem">{pp_dark}</div>'
             f'<div style="color:#9CA3AF;font-size:0.7rem">{dh_status_txt}</div>'
             f'{"<div style=color:#D4A017;font-size:0.7rem>Next: " + dh_next + "</div>" if dh_next else ""}'
             f'</div>'
-            f'<div style="color:{dh_col};font-weight:700;font-size:1.05rem">+{dh_bonus:.0f}</div>'
+            f'<div style="color:{dh_col};font-weight:700;font-size:1.0rem">+{dh_bonus:.0f}</div>'
             f'</div>'
             f'<div style="display:flex;gap:0.3rem;margin-top:0.4rem;flex-wrap:wrap">'
             + "".join(
@@ -510,6 +586,7 @@ if h2h_opponent:
     h2h_grand      = h2h_result.get("grand_total", 0.0)
     h2h_cap_info   = h2h_result.get("captain", {})
     h2h_ins        = h2h_result.get("insurance_bonus", 0.0)
+    h2h_spec       = h2h_result.get("special_bonus", 0.0)
     h2h_pred       = h2h_result.get("predictions", {}).get("total", 0.0)
 
     my_teams   = set(dict.fromkeys(eff["group_stage"] + eff["knockout"]))
@@ -551,6 +628,7 @@ if h2h_opponent:
 
     _h2h_row("Team Points",    base_total,    h2h_result.get("base_total", 0))
     _h2h_row("Captain Bonus",  captain_bonus, h2h_cap_info.get("total", 0))
+    _h2h_row("Special Events", special_bonus, h2h_spec)
     _h2h_row("Insurance",      insurance_pts, h2h_ins)
     _h2h_row("Predictions",    pred_total,    h2h_pred)
     _h2h_row("Total",          grand_total,   h2h_grand)

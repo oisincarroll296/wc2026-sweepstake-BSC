@@ -32,7 +32,8 @@ AUDIT_LOG_PATH     = DATA_DIR / "audit_log.csv"
 # ---------------------------------------------------------------------------
 PLAYER_STATUSES    = frozenset({"UNPAID", "PAID"})
 PURCHASE_TYPES     = frozenset({
-    "BuyIn", "PredictionPack", "Mulligan", "NinthTeam", "Resurrection", "Insurance",
+    "BuyIn", "PredictionPack", "Mulligan", "CompleteRedraw",
+    "NinthTeam", "Resurrection", "Insurance",
 })
 PURCHASE_STATUSES  = frozenset({"PENDING", "PROCESSED", "CANCELLED"})
 EVENT_TYPES        = frozenset({
@@ -43,11 +44,12 @@ EVENT_STATUSES     = frozenset({"SCHEDULED", "OPEN", "CLOSED", "EXECUTED"})
 QF_ROUNDS = frozenset({"QF", "SF", "Final", "Winner"})
 
 PRICES: dict[str, float] = {
-    "BuyIn":        5.0,
+    "BuyIn":          5.0,
     "PredictionPack": 5.0,
-    "Mulligan":     3.0,
-    "NinthTeam":    3.0,
-    "Resurrection": 5.0,
+    "Mulligan":       3.0,
+    "CompleteRedraw": 6.0,
+    "NinthTeam":      3.0,
+    "Resurrection":   5.0,
     "Insurance":    2.0,
 }
 
@@ -623,7 +625,7 @@ def _build_leaderboard(
     if lb.empty or "TotalPoints" not in lb.columns:
         return pd.DataFrame(columns=[
             "Rank", "Player", "BasePoints", "CaptainBonus",
-            "InsuranceBonus", "PredictionBonus", "TotalPoints",
+            "InsuranceBonus", "SpecialBonus", "PredictionBonus", "TotalPoints",
             "tiebreak_goals", "tiebreak_qf", "PaymentStatus",
         ])
 
@@ -717,21 +719,26 @@ def get_team_ownership(
 def get_predictions_centre(predictions: pd.DataFrame) -> dict:
     """Aggregate all predictions for the Predictions Centre.
 
-    Returns {world_cup_winner, golden_boot, dark_horse} each mapping
-    pick → list[player].
+    Returns each category mapping pick → list[player].
     """
     centre: dict[str, dict] = {
         "world_cup_winner": {},
+        "runner_up": {},
+        "bronze_winner": {},
         "golden_boot": {},
         "dark_horse": {},
+        "first_knocked_out": {},
     }
     if predictions.empty:
         return centre
 
     field_map = {
-        "WorldCupWinner": "world_cup_winner",
-        "GoldenBoot":     "golden_boot",
-        "DarkHorse":      "dark_horse",
+        "WorldCupWinner":  "world_cup_winner",
+        "RunnerUp":        "runner_up",
+        "BronzeMedal":     "bronze_winner",
+        "GoldenBoot":      "golden_boot",
+        "DarkHorse":       "dark_horse",
+        "FirstKnockedOut": "first_knocked_out",
     }
     for _, row in predictions.iterrows():
         player = str(row.get("Player", "") or "").strip()

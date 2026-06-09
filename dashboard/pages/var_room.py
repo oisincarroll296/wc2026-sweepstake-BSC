@@ -34,12 +34,69 @@ def _load_csv(name: str) -> pd.DataFrame:
 page_header("🔍 The VAR Room", "Full transparency — every transaction, draw, and decision")
 
 tabs = st.tabs([
-    "Payment Ledger", "Prize Pool", "Event Timeline",
+    "Purchases", "Payment Ledger", "Prize Pool", "Event Timeline",
     "Audit Log", "Draw History", "Random Seeds", "Transaction History",
 ])
 
-# ── 1. Payment Ledger ──────────────────────────────────────────────────────
+# ── 0. Purchases ───────────────────────────────────────────────────────────
 with tabs[0]:
+    from src.competition import PRICES as _PRICES_0
+    _pur0 = get_purchases()
+    _pur_statuses = get_statuses()
+
+    st.subheader("💳 Payment Ledger")
+    st.caption("Status of each player's buy-in, packs, and add-ons.")
+    if not _pur_statuses.empty:
+        _ledger_rows = []
+        for _, _sr in _pur_statuses.iterrows():
+            _pl = _sr["Player"]
+            _pp = _pur0[_pur0["Player"] == _pl] if not _pur0.empty else pd.DataFrame()
+            _has_buyin = not _pp.empty and not _pp[_pp["PurchaseType"] == "BuyIn"].empty
+            _has_pack  = not _pp.empty and not _pp[_pp["PurchaseType"] == "PredictionPack"].empty
+            _has_ins   = not _pp.empty and not _pp[_pp["PurchaseType"] == "Insurance"].empty
+            _has_9th   = not _pp.empty and not _pp[_pp["PurchaseType"] == "NinthTeam"].empty
+            _has_res   = not _pp.empty and not _pp[_pp["PurchaseType"] == "Resurrection"].empty
+            _total = sum(
+                float(_PRICES_0.get(_r["PurchaseType"], 0))
+                for _, _r in _pp.iterrows()
+            ) if not _pp.empty else 0.0
+            _ledger_rows.append({
+                "Player":      _pl,
+                "Status":      _sr.get("Status", "UNPAID"),
+                "Buy In":      "✓" if _has_buyin else "—",
+                "Pred Pack":   "✓" if _has_pack  else "—",
+                "Insurance":   "✓" if _has_ins   else "—",
+                "9th Team":    "✓" if _has_9th   else "—",
+                "Resurrection":"✓" if _has_res   else "—",
+                "Total":       f"€{_total:.0f}",
+            })
+        _ledger_df = pd.DataFrame(_ledger_rows)
+
+        def _lstyle(row):
+            if row.get("Status") == "UNPAID":
+                return ["color:#6B7280"] * len(row)
+            return [""] * len(row)
+
+        st.dataframe(
+            _ledger_df.style.apply(_lstyle, axis=1),
+            use_container_width=True, hide_index=True,
+        )
+    else:
+        empty_state("No payment data yet.")
+
+    st.divider()
+    st.subheader("🛒 All Purchases")
+    if not _pur0.empty:
+        _pur_disp = _pur0.copy()
+        _pur_disp.insert(2, "Amount", _pur_disp["PurchaseType"].map(_PRICES_0).fillna(0.0).apply(lambda x: f"€{x:.0f}"))
+        _show0 = [c for c in ["Player", "PurchaseType", "Amount", "Selection", "Reference", "Timestamp"] if c in _pur_disp.columns]
+        searchable_table(_pur_disp[_show0], "Search player or purchase type…", key="tbl_purchases_main")
+    else:
+        empty_state("No purchases recorded yet.")
+
+
+# ── 1. Payment Ledger (detailed) ────────────────────────────────────────────
+with tabs[1]:
     st.subheader("💳 Payment Ledger")
     df = get_purchases()
     if not df.empty:
@@ -52,7 +109,7 @@ with tabs[0]:
         empty_state("No payment data yet.")
 
 # ── 2. Prize Pool Breakdown ────────────────────────────────────────────────
-with tabs[1]:
+with tabs[2]:
     st.subheader("💰 Prize Pool Breakdown")
     from dashboard.data import get_prize_pool
     pool = get_prize_pool()
@@ -71,7 +128,7 @@ with tabs[1]:
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 # ── 3. Event Timeline ──────────────────────────────────────────────────────
-with tabs[2]:
+with tabs[3]:
     st.subheader("📅 Event Timeline")
     ev = get_events()
     if ev.empty:
@@ -84,7 +141,7 @@ with tabs[2]:
         st.dataframe(disp_ev, use_container_width=True, hide_index=True)
 
 # ── 4. Audit Log ──────────────────────────────────────────────────────────
-with tabs[3]:
+with tabs[4]:
     st.subheader("📋 Audit Log")
     audit = get_audit_log()
     if audit.empty:
@@ -93,7 +150,7 @@ with tabs[3]:
         searchable_table(audit.iloc[::-1].reset_index(drop=True), "Search events, players, actions…", key="tbl_audit_log")
 
 # ── 5. Draw History ───────────────────────────────────────────────────────
-with tabs[4]:
+with tabs[5]:
     st.subheader("🎲 Draw History")
     audit = get_audit_log()
     sub = st.tabs(["Initial Draw", "Mulligan Draws", "Ninth Team Draws", "Resurrection Draws"])
@@ -135,7 +192,7 @@ with tabs[4]:
         searchable_table(df, key="tbl_resurrection") if not df.empty else empty_state("No resurrection draws recorded.")
 
 # ── 6. Random Seeds ───────────────────────────────────────────────────────
-with tabs[5]:
+with tabs[6]:
     st.subheader("🎯 Draw Seeds")
     st.caption(
         "Every random draw uses a seed so results can be verified and reproduced. "
@@ -156,7 +213,7 @@ with tabs[5]:
         empty_state("No events recorded yet.")
 
 # ── 7. Transaction History ─────────────────────────────────────────────────
-with tabs[6]:
+with tabs[7]:
     st.subheader("📑 Transaction History")
     p = get_purchases()
     if p.empty:
