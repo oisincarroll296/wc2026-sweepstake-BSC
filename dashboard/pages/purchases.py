@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 import streamlit as st
 import pandas as pd
 
-from dashboard.data import get_purchases, get_statuses, get_participants
+from dashboard.data import get_purchases, get_statuses, get_participants, get_prize_pool
 from dashboard.components.ui import page_header, empty_state
 
 _ROOT = Path(__file__).parent.parent.parent
@@ -171,7 +171,5 @@ with r2c1:
     has_insurance = sum(1 for p in participants if "Insurance" in processed.get(p, set()))
     st.metric("Insurance (€2)", f"{has_insurance} / {n}")
 with r2c2:
-    from src.competition import calculate_prize_pool_from_budgets
-    from dashboard.data import get_statuses as _get_statuses
-    _pool = calculate_prize_pool_from_budgets(_get_statuses())
+    _pool = get_prize_pool()
     st.metric("Prize Pool (Revolut)", f"€{_pool['current_pot']:.0f}")

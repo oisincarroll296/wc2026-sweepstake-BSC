@@ -2,10 +2,21 @@
 import sys
 from pathlib import Path
 
-# Ensure project root is importable
+# Ensure THIS project's root is always first in sys.path so its src/ package
+# shadows any identically-named src/ in other World Cup directories.
 _ROOT = Path(__file__).parent.parent
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
+_root_str = str(_ROOT)
+while _root_str in sys.path:
+    sys.path.remove(_root_str)
+sys.path.insert(0, _root_str)
+
+# Purge any src.* modules that were loaded from a different project root so
+# they get re-imported from the correct location on next access.
+_wrong = [k for k in sys.modules if k == "src" or k.startswith("src.")
+          if hasattr(sys.modules[k], "__file__") and sys.modules[k].__file__
+          and not sys.modules[k].__file__.startswith(_root_str)]
+for _k in _wrong:
+    del sys.modules[_k]
 
 import streamlit as st
 
