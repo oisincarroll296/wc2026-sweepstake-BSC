@@ -85,7 +85,7 @@ tabs = st.tabs([
     "Draw Events", "Purchases", "Picks",
     "Locking", "Results Entry", "Special Events",
     "Tournament Results",
-    "WhatsApp", "Draw Broadcast", "Deadlines", "Snapshots",
+    "WhatsApp", "Draw Broadcast", "Deadlines", "Snapshots", "Budgets",
 ])
 
 # ─────────────────────────────────────────────
@@ -1212,3 +1212,84 @@ with tabs[10]:
                     _refresh()
                     st.success(f"Restored from **{snap.name}**")
                     st.rerun()
+
+# ─────────────────────────────────────────────
+# Tab 11: Budgets
+# ─────────────────────────────────────────────
+with tabs[11]:
+    st.subheader("💰 Player Budgets")
+    st.caption(
+        "Budget = total each player has put into the Revolut pocket. "
+        "This drives the prize pool and each player's available spending in the shop. "
+        "Update here when someone sends money, then publish."
+    )
+
+    _players_path = DATA / "players.csv"
+    _pdf = pd.read_csv(_players_path, dtype=str).fillna("") if _players_path.exists() else pd.DataFrame()
+
+    if _pdf.empty:
+        st.warning("players.csv not found.")
+    else:
+        if "Budget" not in _pdf.columns:
+            _pdf["Budget"] = "0"
+
+        # Summary strip
+        _budgets = pd.to_numeric(_pdf["Budget"], errors="coerce").fillna(0)
+        _prize_pool = int(_budgets.sum())
+        _bc1, _bc2, _bc3 = st.columns(3)
+        _bc1.metric("Prize Pool (Revolut total)", f"€{_prize_pool}")
+        _bc2.metric("Players", len(_pdf))
+        _bc3.metric("Avg Budget", f"€{_budgets.mean():.0f}" if len(_pdf) else "€0")
+
+        st.divider()
+
+        # Per-player budget editors
+        _updated = False
+        for _i, _row in _pdf.iterrows():
+            _player = _row["Player"]
+            _cur = int(float(_row.get("Budget", 0) or 0))
+            _spent_types = set()
+            _pur_path = DATA / "purchases.csv"
+            if _pur_path.exists():
+                _pur = pd.read_csv(_pur_path, dtype=str).fillna("")
+                _spent_types = set(_pur.loc[_pur["Player"] == _player, "PurchaseType"].tolist())
+            _addon_costs = {"PredictionPack": 5, "Mulligan": 3, "NinthTeam": 3, "Resurrection": 5, "Insurance": 2}
+            _spent = sum(_addon_costs.get(pt, 0) for pt in _spent_types if pt in _addon_costs)
+            _remaining = _cur - _spent
+
+            _col_name, _col_cur, _col_new, _col_remaining = st.columns([3, 1, 2, 1])
+            with _col_name:
+                st.markdown(
+                    f'<div style="padding:0.45rem 0;font-weight:600;color:#F5F5F5">{_player}</div>',
+                    unsafe_allow_html=True,
+                )
+            with _col_cur:
+                st.markdown(
+                    f'<div style="padding:0.45rem 0;color:#D4A017;font-weight:700">€{_cur}</div>',
+                    unsafe_allow_html=True,
+                )
+            with _col_new:
+                _new_val = st.number_input(
+                    f"Budget for {_player}", min_value=0, max_value=500,
+                    value=_cur, step=1, label_visibility="collapsed",
+                    key=f"budget_{_player}",
+                )
+            with _col_remaining:
+                _rem_color = "#6EE7B7" if _remaining >= 0 else "#EF4444"
+                st.markdown(
+                    f'<div style="padding:0.45rem 0;color:{_rem_color};font-size:0.85rem">'
+                    f'€{_remaining} left</div>',
+                    unsafe_allow_html=True,
+                )
+
+            if int(_new_val) != _cur:
+                _pdf.at[_i, "Budget"] = str(int(_new_val))
+                _updated = True
+
+        st.divider()
+        if st.button("💾 Save Budgets & Publish", type="primary"):
+            _pdf.to_csv(_players_path, index=False)
+            _refresh()
+            push_file(_players_path, "data/players.csv", "Admin: update player budgets")
+            st.success("Budgets saved and published to GitHub.")
+            st.rerun()
