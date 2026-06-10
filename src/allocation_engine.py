@@ -267,8 +267,11 @@ def repick_participant(
 ) -> Allocation:
     """Regenerate teams for one participant without altering any other assignment."""
     _ensure_lookups()
-    n = len(alloc.assignments)
-    t = get_teams_per_tier(n)
+    # Derive teams_per_tier from existing assignments rather than player count so
+    # the function works correctly when the allocation has fewer entries than the
+    # real game (e.g. in tests with 3-player fixtures built for 8-teams/player).
+    sample = next(iter(alloc.assignments.values()), [])
+    t = max(1, len(sample) // len(TIERS))
 
     other_usage: dict[str, int] = {}
     other_scores: dict[str, float] = {}

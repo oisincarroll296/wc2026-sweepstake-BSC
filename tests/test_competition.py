@@ -837,7 +837,10 @@ class TestPredictionsCentre:
 
     def test_returns_required_keys(self):
         centre = get_predictions_centre(_empty_predictions())
-        assert set(centre.keys()) == {"world_cup_winner", "golden_boot", "dark_horse"}
+        assert set(centre.keys()) == {
+            "world_cup_winner", "golden_boot", "dark_horse",
+            "runner_up", "bronze_winner", "first_knocked_out",
+        }
 
 # ---------------------------------------------------------------------------
 # TestPaymentLedger

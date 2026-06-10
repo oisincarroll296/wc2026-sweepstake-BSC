@@ -167,26 +167,26 @@ class TestKnockoutScoringRates:
     def test_knockout_goal_scores_1_pt(self):
         ms = _ms(Team="France", KnockoutGoals=1, RoundReached="R16")
         result = calculate_team_points("France", ms, 1)
-        # 1 goal + R16 T1 (2) = 3
-        assert result["knockout"] == 3.0
+        # 1 goal + R32(1) + R16(2) T1 = 4
+        assert result["knockout"] == 4.0
 
     def test_knockout_clean_sheet_scores_2_pts(self):
         ms = _ms(Team="France", KnockoutCleanSheets=1, RoundReached="R16")
         result = calculate_team_points("France", ms, 1)
-        # 2 + R16=2 = 4
-        assert result["knockout"] == 4.0
+        # 2 + R32(1) + R16(2) = 5
+        assert result["knockout"] == 5.0
 
     def test_knockout_penalty_win_scores_3_pts(self):
         ms = _ms(Team="France", KnockoutPenaltyWins=1, RoundReached="R16")
         result = calculate_team_points("France", ms, 1)
-        # 3 + R16=2 = 5
-        assert result["knockout"] == 5.0
+        # 3 + R32(1) + R16(2) = 6
+        assert result["knockout"] == 6.0
 
     def test_knockout_comeback_win_scores_3_pts(self):
         ms = _ms(Team="France", KnockoutComebackWins=1, RoundReached="R16")
         result = calculate_team_points("France", ms, 1)
-        # 3 + R16=2 = 5
-        assert result["knockout"] == 5.0
+        # 3 + R32(1) + R16(2) = 6
+        assert result["knockout"] == 6.0
 
 
 # ---------------------------------------------------------------------------
@@ -201,33 +201,33 @@ class TestProgressionBonuses:
         ms = _ms(Team=team, RoundReached=rnd)
         return calculate_team_points(team, ms, tier)["knockout"]
 
-    # Tier 1
-    def test_t1_r16(self): assert self._prog_only(1, "R16") == 2.0
-    def test_t1_qf_cumulative(self): assert self._prog_only(1, "QF") == 6.0    # 2+4
-    def test_t1_sf_cumulative(self): assert self._prog_only(1, "SF") == 14.0   # 2+4+8
-    def test_t1_final_cumulative(self): assert self._prog_only(1, "Final") == 26.0  # 2+4+8+12
-    def test_t1_winner_cumulative(self): assert self._prog_only(1, "Winner") == 46.0  # 2+4+8+12+20
+    # Tier 1 (R32=1 is included cumulatively for all KO rounds)
+    def test_t1_r16(self): assert self._prog_only(1, "R16") == 3.0            # 1+2
+    def test_t1_qf_cumulative(self): assert self._prog_only(1, "QF") == 7.0    # 1+2+4
+    def test_t1_sf_cumulative(self): assert self._prog_only(1, "SF") == 15.0   # 1+2+4+8
+    def test_t1_final_cumulative(self): assert self._prog_only(1, "Final") == 27.0  # 1+2+4+8+12
+    def test_t1_winner_cumulative(self): assert self._prog_only(1, "Winner") == 47.0  # 1+2+4+8+12+20
 
-    # Tier 2
-    def test_t2_r16(self): assert self._prog_only(2, "R16") == 4.0
-    def test_t2_qf_cumulative(self): assert self._prog_only(2, "QF") == 12.0   # 4+8
-    def test_t2_sf_cumulative(self): assert self._prog_only(2, "SF") == 24.0   # 4+8+12
-    def test_t2_final_cumulative(self): assert self._prog_only(2, "Final") == 42.0  # 4+8+12+18
-    def test_t2_winner_cumulative(self): assert self._prog_only(2, "Winner") == 70.0  # 4+8+12+18+28
+    # Tier 2 (R32=2)
+    def test_t2_r16(self): assert self._prog_only(2, "R16") == 6.0            # 2+4
+    def test_t2_qf_cumulative(self): assert self._prog_only(2, "QF") == 14.0   # 2+4+8
+    def test_t2_sf_cumulative(self): assert self._prog_only(2, "SF") == 26.0   # 2+4+8+12
+    def test_t2_final_cumulative(self): assert self._prog_only(2, "Final") == 44.0  # 2+4+8+12+18
+    def test_t2_winner_cumulative(self): assert self._prog_only(2, "Winner") == 72.0  # 2+4+8+12+18+28
 
-    # Tier 3
-    def test_t3_r16(self): assert self._prog_only(3, "R16") == 8.0
-    def test_t3_qf_cumulative(self): assert self._prog_only(3, "QF") == 23.0   # 8+15
-    def test_t3_sf_cumulative(self): assert self._prog_only(3, "SF") == 43.0   # 8+15+20
-    def test_t3_final_cumulative(self): assert self._prog_only(3, "Final") == 75.0  # 8+15+20+32
-    def test_t3_winner_cumulative(self): assert self._prog_only(3, "Winner") == 121.0  # 8+15+20+32+46
+    # Tier 3 (R32=5)
+    def test_t3_r16(self): assert self._prog_only(3, "R16") == 13.0           # 5+8
+    def test_t3_qf_cumulative(self): assert self._prog_only(3, "QF") == 28.0   # 5+8+15
+    def test_t3_sf_cumulative(self): assert self._prog_only(3, "SF") == 48.0   # 5+8+15+20
+    def test_t3_final_cumulative(self): assert self._prog_only(3, "Final") == 80.0  # 5+8+15+20+32
+    def test_t3_winner_cumulative(self): assert self._prog_only(3, "Winner") == 126.0  # 5+8+15+20+32+46
 
-    # Tier 4
-    def test_t4_r16(self): assert self._prog_only(4, "R16") == 12.0
-    def test_t4_qf_cumulative(self): assert self._prog_only(4, "QF") == 37.0   # 12+25
-    def test_t4_sf_cumulative(self): assert self._prog_only(4, "SF") == 67.0   # 12+25+30
-    def test_t4_final_cumulative(self): assert self._prog_only(4, "Final") == 112.0  # 12+25+30+45
-    def test_t4_winner_cumulative(self): assert self._prog_only(4, "Winner") == 177.0  # 12+25+30+45+65
+    # Tier 4 (R32=8)
+    def test_t4_r16(self): assert self._prog_only(4, "R16") == 20.0           # 8+12
+    def test_t4_qf_cumulative(self): assert self._prog_only(4, "QF") == 45.0   # 8+12+25
+    def test_t4_sf_cumulative(self): assert self._prog_only(4, "SF") == 75.0   # 8+12+25+30
+    def test_t4_final_cumulative(self): assert self._prog_only(4, "Final") == 120.0  # 8+12+25+30+45
+    def test_t4_winner_cumulative(self): assert self._prog_only(4, "Winner") == 185.0  # 8+12+25+30+45+65
 
     def test_group_stage_elimination_no_progression(self):
         result = calculate_team_points("France", _ms(Team="France", RoundReached="GroupStage"), 1)
@@ -556,8 +556,8 @@ class TestNinthTeamRule:
             tier_map={**TIER_MAP, "Germany": 1},
         )
         germany_pts = result["team_points"]["Germany"]
-        # 3 KO goals + T1 R16(2)+QF(4) = 3+6 = 9
-        assert germany_pts["knockout"] == pytest.approx(9.0)
+        # 3 KO goals + T1 R32(1)+R16(2)+QF(4) = 3+7 = 10
+        assert germany_pts["knockout"] == pytest.approx(10.0)
         assert "Germany" in result["knockout_teams"]
 
     def test_ninth_team_group_stage_points_not_counted(self):
@@ -615,8 +615,8 @@ class TestResurrectionRule:
             "Alice", ASSIGNMENTS, ms, purch, EMPTY_CAPS, EMPTY_PREDS,
             tier_map={**TIER_MAP, "Germany": 1},
         )
-        # Germany: 2 KO goals + R16 T1 (2) = 4
-        assert result["team_points"]["Germany"]["knockout"] == pytest.approx(4.0)
+        # Germany: 2 KO goals + R32(1) + R16(2) T1 = 5
+        assert result["team_points"]["Germany"]["knockout"] == pytest.approx(5.0)
 
     def test_second_resurrection_not_applied(self):
         """Only the first resurrection is used — once only rule."""
@@ -726,7 +726,7 @@ class TestGrandTotalFormula:
 
 class TestRoundOrderConstants:
     def test_round_order_has_all_stages(self):
-        expected = ["GroupStage", "R16", "QF", "SF", "Final", "Winner"]
+        expected = ["GroupStage", "R32", "R16", "QF", "SF", "Final", "Winner"]
         assert ROUND_ORDER == expected
 
     def test_knockout_rounds_excludes_group_stage(self):
@@ -760,8 +760,8 @@ class TestComebackWinRule:
 
     def test_one_ko_comeback_win_scores_3_plus_progression(self):
         ms = _ms(Team="France", KnockoutComebackWins=1, RoundReached="R16")
-        # 3 (comeback) + 2 (R16 T1) = 5
-        assert calculate_team_points("France", ms, 1)["knockout"] == 5.0
+        # 3 (comeback) + R32(1) + R16(2) T1 = 6
+        assert calculate_team_points("France", ms, 1)["knockout"] == 6.0
 
     def test_multiple_comeback_wins_scale_linearly(self):
         result = calculate_team_points(
