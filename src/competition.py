@@ -280,6 +280,22 @@ def parse_payment_reference(reference: str) -> dict:
 # Prize pool
 # ---------------------------------------------------------------------------
 
+def calculate_prize_pool_from_budgets(players_df: pd.DataFrame) -> dict:
+    """Prize pool = sum of player budgets (total Revolut contributions).
+
+    Returns {current_pot, first_prize, second_prize, third_prize}.
+    """
+    total = 0.0
+    if not players_df.empty and "Budget" in players_df.columns:
+        total = float(pd.to_numeric(players_df["Budget"], errors="coerce").fillna(0).sum())
+    return {
+        "current_pot":  total,
+        "first_prize":  round(total * PRIZE_SHARES[0], 2),
+        "second_prize": round(total * PRIZE_SHARES[1], 2),
+        "third_prize":  round(total * PRIZE_SHARES[2], 2),
+    }
+
+
 def calculate_prize_pool(purchases: pd.DataFrame) -> dict:
     """Sum all purchase fees and return prize distribution.
 

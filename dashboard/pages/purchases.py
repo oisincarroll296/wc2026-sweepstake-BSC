@@ -171,6 +171,7 @@ with r2c1:
     has_insurance = sum(1 for p in participants if "Insurance" in processed.get(p, set()))
     st.metric("Insurance (€2)", f"{has_insurance} / {n}")
 with r2c2:
-    from src.competition import calculate_prize_pool
-    pool = calculate_prize_pool(purchases)
-    st.metric("Total Collected", f"€{pool['current_pot']:.0f}")
+    from src.competition import calculate_prize_pool_from_budgets
+    from dashboard.data import get_statuses as _get_statuses
+    _pool = calculate_prize_pool_from_budgets(_get_statuses())
+    st.metric("Prize Pool (Revolut)", f"€{_pool['current_pot']:.0f}")

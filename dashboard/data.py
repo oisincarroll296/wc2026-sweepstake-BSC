@@ -19,7 +19,8 @@ from src.team_database  import load_teams
 from src.scoring_engine import load_match_stats, load_predictions, load_captains
 from src.competition    import (
     load_player_status, load_purchases, load_events, load_audit_log,
-    calculate_prize_pool, prize_leaderboard, overall_leaderboard,
+    calculate_prize_pool, calculate_prize_pool_from_budgets,
+    prize_leaderboard, overall_leaderboard,
     get_team_ownership, get_predictions_centre,
 )
 from src.event_engine      import load_allocation
@@ -88,9 +89,8 @@ def get_assignments() -> dict[str, list[str]]:
 
 @st.cache_data(ttl=30)
 def get_prize_pool() -> dict:
-    # Load directly — avoids nested @st.cache_data call which can return
-    # a stale/empty result on first render before the inner cache is primed.
-    return calculate_prize_pool(load_purchases())
+    # Prize pool = sum of player budgets (total Revolut contributions).
+    return calculate_prize_pool_from_budgets(load_player_status())
 
 
 @st.cache_data(ttl=30)
