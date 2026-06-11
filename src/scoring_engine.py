@@ -34,7 +34,7 @@ HAT_TRICK_BONUS = 10              # hat trick scored by any player in the match
 # Special match event bonuses
 SHIRT_REMOVAL_BONUS = 25          # player removes shirt celebrating
 GK_GOAL_BONUS = 75                # goalkeeper scores
-RED_CARD_PENALTY = 15             # per red card (applied negatively)
+RED_CARD_PENALTY = 5              # per red card (applied negatively)
 FIRST_ELIMINATED_BONUS = 35       # consolation for owner of first team knocked out
 
 # Tier-upset win bonuses (winner is N tiers below/worse than loser)

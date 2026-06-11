@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 
 from dashboard.data import (
     get_prize_leaderboard, get_overall_leaderboard,
-    get_prize_pool, get_remaining_potential,
+    get_prize_pool, get_remaining_potential, get_player_goals_wins,
 )
 from dashboard.config import PLOTLY_LAYOUT, COLORS
 from dashboard.components.ui import page_header, empty_state
@@ -20,6 +20,9 @@ pool = get_prize_pool()
 lb_prize = get_prize_leaderboard()
 lb_all   = get_overall_leaderboard()
 pot      = get_remaining_potential()
+_gw      = get_player_goals_wins()
+_goals_map = dict(zip(_gw["Player"], _gw["Goals"])) if not _gw.empty else {}
+_wins_map  = dict(zip(_gw["Player"], _gw["Wins"]))  if not _gw.empty else {}
 
 tab_prize, tab_all = st.tabs(["🏆 Prize Standings", "🌍 All Players"])
 
@@ -106,12 +109,16 @@ def _format_lb(lb: pd.DataFrame, show_prize: bool = False) -> pd.DataFrame:
         spec   = float(row.get("SpecialBonus", 0))
         pred   = float(row.get("PredictionBonus", 0))
         rem    = pot.get(player, 0)
+        goals  = _goals_map.get(player, 0)
+        wins   = _wins_map.get(player, 0)
         r = {
             "":         medal,
             "Player":   player,
             "Total":    f"{pts:.0f}",
             "Gap":      f"{pts - leader_pts:+.0f}" if rank > 1 else "—",
             "Match":    f"{base:.0f}",
+            "⚽ Goals": str(goals) if goals else "—",
+            "🏆 Wins":  str(wins)  if wins  else "—",
             "Captain":  f"+{cap:.0f}" if cap else "—",
             "Special":  f"+{spec:.0f}" if spec else "—",
             "Insurance":f"+{ins:.0f}" if ins else "—",

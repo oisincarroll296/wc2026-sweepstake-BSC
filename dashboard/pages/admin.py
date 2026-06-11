@@ -904,7 +904,7 @@ with tabs[5]:
         _gk = st.number_input("Count", 0, 10, _sei("GKGoals"), key="se_gk",
                                help="Goal scored by a goalkeeper")
 
-        st.markdown("**Red Cards** (−15 per card)")
+        st.markdown("**Red Cards** (−5 per card)")
         _red = st.number_input("Count", 0, 20, _sei("RedCards"), key="se_red",
                                help="Total red cards received by this team across the tournament")
 

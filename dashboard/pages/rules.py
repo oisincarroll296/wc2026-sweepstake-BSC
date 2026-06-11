@@ -62,7 +62,7 @@ with tab_scoring:
 |---|---|
 | Player removes shirt to celebrate *(proof required)* | +25 |
 | Goalkeeper scores a goal | +75 |
-| Red card received | −15 |
+| Red card received | −5 |
 | First team knocked out of the tournament | +35 *(to owners)* |
 """)
 

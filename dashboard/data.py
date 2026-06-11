@@ -315,6 +315,47 @@ def get_match_results() -> pd.DataFrame:
         return pd.DataFrame()
 
 
+def _snapshot_score_history() -> None:
+    """Write today's score snapshot to score_history.csv — called after each recalculation."""
+    import json
+    from datetime import date
+    today = date.today().isoformat()
+    history_p = _ROOT / "data" / "score_history.csv"
+    try:
+        from src.event_engine import load_allocation
+        from src.scoring_engine import load_match_stats as _lms, load_predictions as _lp, load_captains as _lc
+        from src.competition import load_player_status as _ls, load_purchases as _lpurch, overall_leaderboard as _olb
+
+        statuses = _ls()
+        participants = statuses["Player"].tolist() if not statuses.empty else []
+        if not participants:
+            return
+        assignments_raw = load_allocation()
+        assignments: dict[str, list[str]] = {}
+        for _, row in assignments_raw.iterrows():
+            assignments.setdefault(str(row["Player"]), []).append(str(row["Team"]))
+
+        tr_path = _ROOT / "data" / "tournament_results.json"
+        tr = json.loads(tr_path.read_text()) if tr_path.exists() else {}
+
+        lb = _olb(participants, assignments, _lms(), _lpurch(), _lc(), _lp(), statuses, tournament_results=tr)
+        if lb.empty or "TotalPoints" not in lb.columns:
+            return
+
+        if history_p.exists() and history_p.stat().st_size > 20:
+            hist = pd.read_csv(history_p, dtype=str)
+        else:
+            hist = pd.DataFrame(columns=["Date", "Player", "Points"])
+
+        hist = hist[hist["Date"].astype(str) != today]
+        new_rows = [{"Date": today, "Player": str(r["Player"]), "Points": f"{float(r['TotalPoints']):.2f}"}
+                    for _, r in lb.iterrows()]
+        hist = pd.concat([hist, pd.DataFrame(new_rows)], ignore_index=True)
+        hist.to_csv(history_p, index=False)
+    except Exception:
+        pass  # snapshot is non-critical
+
+
 def save_match_result_and_recalculate(
     match_number: int,
     home_goals: int,
@@ -350,8 +391,9 @@ def save_match_result_and_recalculate(
     df = pd.concat([df, new_row], ignore_index=True)
     df.to_csv(results_path, index=False)
 
-    # Recalculate match_stats from all entered results
+    # Recalculate match_stats from all entered results, then snapshot scores
     _recalculate_match_stats()
+    _snapshot_score_history()
     st.cache_data.clear()
 
 
@@ -554,16 +596,19 @@ def get_remaining_potential_detail() -> dict:
         team_details  = []
 
         for team in teams:
+            tier = tier_map.get(team, 1)
+            _not_started = {"team": team, "tier": tier,
+                            "round_reached": "", "alive": True, "max_remaining": 0.0,
+                            "goals": 0, "wins": 0}
             if match_stats.empty:
-                td = {"team": team, "tier": tier_map.get(team, 1),
-                      "round_reached": "", "alive": True, "max_remaining": 0.0}
-                team_details.append(td)
+                team_details.append(_not_started)
                 continue
             row = match_stats[match_stats["Team"] == team]
             if row.empty:
+                team_details.append(_not_started)
                 continue
-            rnd  = str(row.iloc[0].get("RoundReached", "") or "").strip()
-            tier = tier_map.get(team, 1)
+            r    = row.iloc[0]
+            rnd  = str(r.get("RoundReached", "") or "").strip()
             bonuses = PROGRESSION_BONUSES.get(tier, {})
 
             alive = rnd not in ELIMINATED and rnd != "Winner"
@@ -577,10 +622,14 @@ def get_remaining_potential_detail() -> dict:
             else:
                 team_max = 0.0
 
+            goals = int(float(r.get("GroupGoals",    0) or 0)) + int(float(r.get("KnockoutGoals", 0) or 0))
+            wins  = int(float(r.get("GroupWins",     0) or 0)) + int(float(r.get("KnockoutWins",  0) or 0))
+
             max_potential += team_max
             team_details.append({
                 "team": team, "tier": tier, "round_reached": rnd,
                 "alive": alive, "max_remaining": team_max,
+                "goals": goals, "wins": wins,
             })
 
         result[player] = {
@@ -591,6 +640,19 @@ def get_remaining_potential_detail() -> dict:
             "teams":              sorted(team_details, key=lambda x: (-x["max_remaining"], x["team"])),
         }
     return result
+
+
+@st.cache_data(ttl=30)
+def get_player_goals_wins() -> pd.DataFrame:
+    """Total goals and wins per player summed across their team portfolio."""
+    detail = get_remaining_potential_detail()
+    rows = [
+        {"Player": p,
+         "Goals": sum(t.get("goals", 0) for t in info["teams"]),
+         "Wins":  sum(t.get("wins",  0) for t in info["teams"])}
+        for p, info in detail.items()
+    ]
+    return pd.DataFrame(rows) if rows else pd.DataFrame(columns=["Player", "Goals", "Wins"])
 
 
 @st.cache_data(ttl=60)

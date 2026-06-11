@@ -315,31 +315,34 @@ if _hist_path.exists():
                     "Player": _row["Player"],
                     "Rank": _r + 1,
                 })
-        _rank_df = pd.DataFrame(_rank_rows)
-        _fig_rank = go.Figure()
-        for _idx, _pl in enumerate(sorted(_rank_df["Player"].unique())):
-            _pd2 = _rank_df[_rank_df["Player"] == _pl].sort_values("Date")
-            _fig_rank.add_trace(go.Scatter(
-                x=_pd2["Label"].tolist(),
-                y=_pd2["Rank"].tolist(),
-                mode="lines+markers",
-                name=_pl,
-                line=dict(color=_palette[_idx % len(_palette)], width=2),
-                marker=dict(size=6),
-                hovertemplate=f"<b>{_pl}</b><br>%{{x}}: rank %{{y}}<extra></extra>",
-            ))
-        _rank_layout = {**PLOTLY_LAYOUT}
-        _rank_layout.update(
-            title="Rank Position by Gameweek (lower = better)",
-            height=420,
-            xaxis_title="Tournament Stage",
-            yaxis_title="Position",
-            yaxis=dict(autorange="reversed", dtick=1, gridcolor="#2A3A4A"),
-            legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=11), x=1.01, y=1),
-        )
-        _fig_rank.update_layout(**_rank_layout)
-        st.plotly_chart(_fig_rank, use_container_width=True)
-        st.caption("Inverted axis — 1st place sits at the top. Shows who is climbing and who is falling.")
+        _rank_df = pd.DataFrame(_rank_rows) if _rank_rows else pd.DataFrame(columns=["Date", "Label", "Player", "Rank"])
+        if not _rank_df.empty:
+            _fig_rank = go.Figure()
+            for _idx, _pl in enumerate(sorted(_rank_df["Player"].unique())):
+                _pd2 = _rank_df[_rank_df["Player"] == _pl].sort_values("Date")
+                _fig_rank.add_trace(go.Scatter(
+                    x=_pd2["Label"].tolist(),
+                    y=_pd2["Rank"].tolist(),
+                    mode="lines+markers",
+                    name=_pl,
+                    line=dict(color=_palette[_idx % len(_palette)], width=2),
+                    marker=dict(size=6),
+                    hovertemplate=f"<b>{_pl}</b><br>%{{x}}: rank %{{y}}<extra></extra>",
+                ))
+            _rank_layout = {**PLOTLY_LAYOUT}
+            _rank_layout.update(
+                title="Rank Position by Gameweek (lower = better)",
+                height=420,
+                xaxis_title="Tournament Stage",
+                yaxis_title="Position",
+                yaxis=dict(autorange="reversed", dtick=1, gridcolor="#2A3A4A"),
+                legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=11), x=1.01, y=1),
+            )
+            _fig_rank.update_layout(**_rank_layout)
+            st.plotly_chart(_fig_rank, use_container_width=True)
+            st.caption("Inverted axis — 1st place sits at the top. Shows who is climbing and who is falling.")
+        else:
+            st.info("Rank history will appear after multiple score snapshots are recorded.")
     except Exception as _e:
         st.info(f"Points history not available: {_e}")
 else:
@@ -455,6 +458,8 @@ if _pot_detail:
                 "_tier":    _t["tier"],
                 "_rnd":     _t["round_reached"],
                 "_max":     _t["max_remaining"],
+                "_goals":   _t.get("goals", 0),
+                "_wins":    _t.get("wins", 0),
             })
 
     if _breakdown_rows:
@@ -473,6 +478,8 @@ if _pot_detail:
             _rnd_lbl = _ROUND_LABEL_SHORT.get(_br["_rnd"], _br["_rnd"])
             _max_str = f"+{_br['_max']:.0f}" if _br["_max"] > 0 else "—"
             _max_col = "#6EE7B7" if _br["_max"] > 0 else "#6B7280"
+            _goals_str = str(_br["_goals"]) if _br["_goals"] else "—"
+            _wins_str  = str(_br["_wins"])  if _br["_wins"]  else "—"
             _html_rows.append(
                 f'<tr>'
                 f'{_pl_label}'
@@ -482,8 +489,10 @@ if _pot_detail:
                 f'<span style="color:#F5F5F5;font-size:0.8rem">{_br["_team"]}</span>'
                 f'</td>'
                 f'<td style="color:#9CA3AF;font-size:0.75rem;padding:0.3rem 0.5rem">{_rnd_lbl}</td>'
+                f'<td style="color:#93C5FD;font-size:0.8rem;padding:0.3rem 0.5rem;text-align:right">{_goals_str}</td>'
+                f'<td style="color:#86EFAC;font-size:0.8rem;padding:0.3rem 0.5rem;text-align:right">{_wins_str}</td>'
                 f'<td style="color:{_max_col};font-size:0.8rem;font-weight:700;'
-                f'padding:0.3rem 0.5rem;text-align:right">{_max_str} pts</td>'
+                f'padding:0.3rem 0.5rem;text-align:right">{_max_str}</td>'
                 f'</tr>'
             )
 
@@ -495,15 +504,19 @@ if _pot_detail:
             '<th style="color:#6B7280;font-size:0.7rem;font-weight:600;padding:0.3rem 0.5rem;'
             'text-align:left;border-bottom:1px solid #2A3A4A">Team</th>'
             '<th style="color:#6B7280;font-size:0.7rem;font-weight:600;padding:0.3rem 0.5rem;'
-            'text-align:left;border-bottom:1px solid #2A3A4A">Current Round</th>'
-            '<th style="color:#6B7280;font-size:0.7rem;font-weight:600;padding:0.3rem 0.5rem;'
+            'text-align:left;border-bottom:1px solid #2A3A4A">Round</th>'
+            '<th style="color:#93C5FD;font-size:0.7rem;font-weight:600;padding:0.3rem 0.5rem;'
+            'text-align:right;border-bottom:1px solid #2A3A4A">Goals</th>'
+            '<th style="color:#86EFAC;font-size:0.7rem;font-weight:600;padding:0.3rem 0.5rem;'
+            'text-align:right;border-bottom:1px solid #2A3A4A">Wins</th>'
+            '<th style="color:#6EE7B7;font-size:0.7rem;font-weight:600;padding:0.3rem 0.5rem;'
             'text-align:right;border-bottom:1px solid #2A3A4A">Max Remaining</th>'
             '</tr></thead>'
             '<tbody>' + "".join(_html_rows) + '</tbody>'
             '</table>'
         )
         st.markdown(_table_html, unsafe_allow_html=True)
-        st.caption("Max remaining = progression bonuses if this team wins the tournament from here. Excludes match points (goals, clean sheets) which are unpredictable.")
+        st.caption("Goals and Wins are totals so far. Max remaining = progression bonuses if this team wins the tournament from here.")
     else:
         st.info("No surviving teams yet — breakdown appears once the knockout stage begins.")
 
