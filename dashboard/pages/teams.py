@@ -286,8 +286,9 @@ with tab_fixtures:
                 for _, m in day_matches.iterrows():
                     home = str(m.get("home_team", ""))
                     away = str(m.get("away_team", ""))
-                    grp  = str(m.get("group", "")).strip()
+                    grp   = str(m.get("group", "")).strip()
                     venue = str(m.get("venue", "")).strip()
+                    ko    = str(m.get("kickoff_time", "")).strip()
                     mn   = int(pd.to_numeric(m["match_number"], errors="coerce") or 0)
                     done = mn in entered_nums
                     home_owners = ", ".join(ownership_map.get(home, []))
@@ -314,12 +315,13 @@ with tab_fixtures:
                     away_owner_html = f'<div style="color:#6EE7B7;font-size:0.65rem;margin-top:2px">{away_owners}</div>' if away_owners else '<div style="font-size:0.65rem"> </div>'
                     round_label = f"Group {grp}" if grp else "Knockout"
                     venue_short = venue.replace(" Stadium", "").replace("Estadio ", "") if venue else ""
+                    ko_label = f" · {ko} GMT" if ko else ""
 
                     st.markdown(
                         f'<div style="background:#1E2937;border-radius:7px;padding:0.55rem 0.8rem;'
                         f'margin:0.25rem 0;{border_style}">'
                         f'<div style="display:flex;justify-content:space-between;margin-bottom:0.35rem;align-items:center">'
-                        f'<span style="color:#6B7280;font-size:0.65rem">{round_label}</span>'
+                        f'<span style="color:#6B7280;font-size:0.65rem">{round_label}{ko_label}</span>'
                         f'<span style="color:#4B5563;font-size:0.63rem">{venue_short}</span>'
                         f'</div>'
                         f'<div style="display:flex;align-items:center;gap:0.5rem">'

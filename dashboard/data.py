@@ -19,7 +19,7 @@ from src.team_database  import load_teams
 from src.scoring_engine import load_match_stats, load_predictions, load_captains
 from src.competition    import (
     load_player_status, load_purchases, load_events, load_audit_log,
-    calculate_prize_pool, calculate_prize_pool_from_budgets,
+    calculate_prize_pool,
     prize_leaderboard, overall_leaderboard,
     get_team_ownership, get_predictions_centre,
 )
@@ -89,8 +89,18 @@ def get_assignments() -> dict[str, list[str]]:
 
 @st.cache_data(ttl=30)
 def get_prize_pool() -> dict:
-    # Prize pool = sum of player budgets (total Revolut contributions).
-    return calculate_prize_pool_from_budgets(load_player_status())
+    _players = load_player_status()
+    total = 0.0
+    if not _players.empty and "Budget" in _players.columns:
+        import pandas as _pd
+        total = float(_pd.to_numeric(_players["Budget"], errors="coerce").fillna(0).sum())
+    _shares = [0.50, 0.30, 0.20]
+    return {
+        "current_pot":  total,
+        "first_prize":  round(total * _shares[0], 2),
+        "second_prize": round(total * _shares[1], 2),
+        "third_prize":  round(total * _shares[2], 2),
+    }
 
 
 @st.cache_data(ttl=30)

@@ -1,79 +1,105 @@
-match_number,match_date,group,home_team,away_team,venue
-1,11/06/2026,A,Mexico,South Africa,Mexico City Stadium
-4,12/06/2026,D,USA,Paraguay,Los Angeles Stadium
-5,13/06/2026,C,Haiti,Scotland,Boston Stadium
-7,13/06/2026,C,Brazil,Morocco,New York New Jersey Stadium
-8,13/06/2026,B,Qatar,Switzerland,San Francisco Bay Area Stadium
-9,14/06/2026,E,Cote d Ivoire,Ecuador,Philadelphia Stadium
-10,14/06/2026,E,Germany,Curacao,Houston Stadium
-11,14/06/2026,F,Netherlands,Japan,Dallas Stadium
-13,15/06/2026,H,Saudi Arabia,Uruguay,Miami Stadium
-14,15/06/2026,H,Spain,Cabo Verde,Atlanta Stadium
-15,15/06/2026,G,IR Iran,New Zealand,Los Angeles Stadium
-16,15/06/2026,G,Belgium,Egypt,Seattle Stadium
-17,16/06/2026,I,France,Senegal,New York New Jersey Stadium
-19,16/06/2026,J,Argentina,Algeria,Kansas City Stadium
-20,16/06/2026,J,Austria,Jordan,San Francisco Bay Area Stadium
-21,17/06/2026,L,Ghana,Panama,Toronto Stadium
-22,17/06/2026,L,England,Croatia,Dallas Stadium
-24,17/06/2026,K,Uzbekistan,Colombia,Mexico City Stadium
-27,18/06/2026,B,Canada,Qatar,BC Place Vancouver
-28,18/06/2026,A,Mexico,Korea Republic,Estadio Guadalajara
-29,19/06/2026,C,Brazil,Haiti,Philadelphia Stadium
-30,19/06/2026,C,Scotland,Morocco,Boston Stadium
-32,19/06/2026,D,USA,Australia,Seattle Stadium
-33,20/06/2026,E,Germany,Cote d Ivoire,Toronto Stadium
-34,20/06/2026,E,Ecuador,Curacao,Kansas City Stadium
-36,20/06/2026,F,Tunisia,Japan,Estadio Monterrey
-37,21/06/2026,H,Uruguay,Cabo Verde,Miami Stadium
-38,21/06/2026,H,Spain,Saudi Arabia,Atlanta Stadium
-39,21/06/2026,G,Belgium,IR Iran,Los Angeles Stadium
-40,21/06/2026,G,New Zealand,Egypt,BC Place Vancouver
-41,22/06/2026,I,Norway,Senegal,New York New Jersey Stadium
-43,22/06/2026,J,Argentina,Austria,Dallas Stadium
-44,22/06/2026,J,Jordan,Algeria,San Francisco Bay Area Stadium
-45,23/06/2026,L,England,Ghana,Boston Stadium
-46,23/06/2026,L,Panama,Croatia,Toronto Stadium
-47,23/06/2026,K,Portugal,Uzbekistan,Houston Stadium
-49,24/06/2026,C,Scotland,Brazil,Miami Stadium
-50,24/06/2026,C,Morocco,Haiti,Atlanta Stadium
-51,24/06/2026,B,Switzerland,Canada,BC Place Vancouver
-54,24/06/2026,A,South Africa,Korea Republic,Estadio Monterrey
-55,25/06/2026,E,Curacao,Cote d Ivoire,Philadelphia Stadium
-56,25/06/2026,E,Ecuador,Germany,New York New Jersey Stadium
-58,25/06/2026,F,Tunisia,Netherlands,Kansas City Stadium
-60,25/06/2026,D,Paraguay,Australia,San Francisco Bay Area Stadium
-61,26/06/2026,I,Norway,France,Boston Stadium
-63,26/06/2026,G,Egypt,IR Iran,Seattle Stadium
-64,26/06/2026,G,New Zealand,Belgium,BC Place Vancouver
-65,26/06/2026,H,Cabo Verde,Saudi Arabia,Houston Stadium
-66,26/06/2026,H,Uruguay,Spain,Estadio Guadalajara
-67,27/06/2026,L,Panama,England,New York New Jersey Stadium
-68,27/06/2026,L,Croatia,Ghana,Philadelphia Stadium
-69,27/06/2026,J,Algeria,Austria,Kansas City Stadium
-70,27/06/2026,J,Jordan,Argentina,Dallas Stadium
-71,27/06/2026,K,Colombia,Portugal,Miami Stadium
-73,28/06/2026,,Group A runners-up,Group B runners-up,Los Angeles Stadium
-75,29/06/2026,,Group F winners,Group C runners-up,Estadio Monterrey
-76,29/06/2026,,Group C winners,Group F runners-up,Houston Stadium
-78,30/06/2026,,Group E runners up,Group I runners-up,Dallas Stadium
-83,02/07/2026,,Group K runners-up,Group L runners-up,Toronto Stadium
-84,02/07/2026,,Group H winners,Group J runners-up,Los Angeles Stadium
-86,03/07/2026,,Group J winners,Group H runners-up,Miami Stadium
-88,03/07/2026,,Group D runners-up,Group G runners-up,Dallas Stadium
-89,04/07/2026,,Winner match 74,Winner match 77,Philadelphia Stadium
-90,04/07/2026,,Winner match 73,Winner match 75,Houston Stadium
-91,05/07/2026,,Winner match 76,Winner match 78,New York New Jersey Stadium
-92,05/07/2026,,Winner match 79,Winner match 80,Mexico City Stadium
-93,06/07/2026,,Winner match 83,Winner match 84,Dallas Stadium
-94,06/07/2026,,Winner match 81,Winner match 82,Seattle Stadium
-95,07/07/2026,,Winner match 86,Winner match 88,Atlanta Stadium
-96,07/07/2026,,Winner match 85,Winner match 87,BC Place Vancouver
-97,09/07/2026,,Winner match 89,Winner match 90,Boston Stadium
-98,10/07/2026,,Winner match 93,Winner match 94,Los Angeles Stadium
-99,11/07/2026,,Winner match 91,Winner match 92,Miami Stadium
-100,11/07/2026,,Winner match 95,Winner match 96,Kansas City Stadium
-101,14/07/2026,,Winner match 97,Winner match 98,Dallas Stadium
-102,15/07/2026,,Winner match 99,Winner match 100,Atlanta Stadium
-103,18/07/2026,,Runner-up match 101,Runner-up match 102,Miami Stadium
-104,19/07/2026,,Winner match 101,Winner match 102,New York New Jersey Stadium
+match_number,match_date,kickoff_time,group,home_team,away_team,venue
+1,11/06/2026,20:00,A,Mexico,South Africa,Mexico City Stadium
+2,12/06/2026,03:00,A,Korea Republic,Czechia,Guadalajara Stadium
+3,12/06/2026,20:00,B,Canada,Bosnia and Herzegovina,Toronto Stadium
+4,13/06/2026,02:00,D,USA,Paraguay,Los Angeles Stadium
+5,14/06/2026,02:00,C,Haiti,Scotland,Boston Stadium
+6,14/06/2026,05:00,D,Australia,Tuerkiye,BC Place Vancouver
+7,13/06/2026,23:00,C,Brazil,Morocco,New York New Jersey Stadium
+8,13/06/2026,20:00,B,Qatar,Switzerland,San Francisco Bay Area Stadium
+9,15/06/2026,00:00,E,Cote d Ivoire,Ecuador,Philadelphia Stadium
+10,14/06/2026,18:00,E,Germany,Curacao,Houston Stadium
+11,14/06/2026,21:00,F,Netherlands,Japan,Dallas Stadium
+12,15/06/2026,03:00,F,Sweden,Tunisia,Monterrey Stadium
+13,15/06/2026,23:00,H,Saudi Arabia,Uruguay,Miami Stadium
+14,15/06/2026,17:00,H,Spain,Cabo Verde,Atlanta Stadium
+15,16/06/2026,02:00,G,IR Iran,New Zealand,Los Angeles Stadium
+16,15/06/2026,20:00,G,Belgium,Egypt,Seattle Stadium
+17,16/06/2026,20:00,I,France,Senegal,New York New Jersey Stadium
+18,16/06/2026,23:00,I,Iraq,Norway,Boston Stadium
+19,17/06/2026,02:00,J,Argentina,Algeria,Kansas City Stadium
+20,17/06/2026,05:00,J,Austria,Jordan,San Francisco Bay Area Stadium
+21,18/06/2026,00:00,L,Ghana,Panama,Toronto Stadium
+22,17/06/2026,21:00,L,England,Croatia,Dallas Stadium
+23,17/06/2026,18:00,K,Portugal,Congo DR,Houston Stadium
+24,18/06/2026,03:00,K,Uzbekistan,Colombia,Mexico City Stadium
+25,18/06/2026,17:00,A,Czechia,South Africa,Atlanta Stadium
+26,18/06/2026,20:00,B,Switzerland,Bosnia and Herzegovina,Los Angeles Stadium
+27,18/06/2026,23:00,B,Canada,Qatar,BC Place Vancouver
+28,19/06/2026,02:00,A,Mexico,Korea Republic,Guadalajara Stadium
+29,20/06/2026,02:00,C,Brazil,Haiti,Philadelphia Stadium
+30,19/06/2026,23:00,C,Scotland,Morocco,Boston Stadium
+31,20/06/2026,05:00,D,Tuerkiye,Paraguay,San Francisco Bay Area Stadium
+32,19/06/2026,20:00,D,USA,Australia,Seattle Stadium
+33,20/06/2026,21:00,E,Germany,Cote d Ivoire,Toronto Stadium
+34,21/06/2026,01:00,E,Ecuador,Curacao,Kansas City Stadium
+35,20/06/2026,18:00,F,Netherlands,Sweden,Houston Stadium
+36,21/06/2026,05:00,F,Tunisia,Japan,Monterrey Stadium
+37,21/06/2026,23:00,H,Uruguay,Cabo Verde,Miami Stadium
+38,21/06/2026,17:00,H,Spain,Saudi Arabia,Atlanta Stadium
+39,21/06/2026,20:00,G,Belgium,IR Iran,Los Angeles Stadium
+40,22/06/2026,02:00,G,New Zealand,Egypt,BC Place Vancouver
+41,23/06/2026,01:00,I,Norway,Senegal,New York New Jersey Stadium
+42,22/06/2026,22:00,I,France,Iraq,Philadelphia Stadium
+43,22/06/2026,18:00,J,Argentina,Austria,Dallas Stadium
+44,23/06/2026,04:00,J,Jordan,Algeria,San Francisco Bay Area Stadium
+45,23/06/2026,21:00,L,England,Ghana,Boston Stadium
+46,24/06/2026,00:00,L,Panama,Croatia,Toronto Stadium
+47,23/06/2026,18:00,K,Portugal,Uzbekistan,Houston Stadium
+48,24/06/2026,03:00,K,Colombia,Congo DR,Guadalajara Stadium
+49,24/06/2026,23:00,C,Scotland,Brazil,Miami Stadium
+50,24/06/2026,23:00,C,Morocco,Haiti,Atlanta Stadium
+51,24/06/2026,20:00,B,Switzerland,Canada,BC Place Vancouver
+52,24/06/2026,20:00,B,Bosnia and Herzegovina,Qatar,Seattle Stadium
+53,25/06/2026,02:00,A,Czechia,Mexico,Mexico City Stadium
+54,25/06/2026,02:00,A,South Africa,Korea Republic,Monterrey Stadium
+55,25/06/2026,21:00,E,Curacao,Cote d Ivoire,Philadelphia Stadium
+56,25/06/2026,21:00,E,Ecuador,Germany,New York New Jersey Stadium
+57,26/06/2026,00:00,F,Japan,Sweden,Dallas Stadium
+58,26/06/2026,00:00,F,Tunisia,Netherlands,Kansas City Stadium
+59,26/06/2026,03:00,D,Tuerkiye,USA,Los Angeles Stadium
+60,26/06/2026,03:00,D,Paraguay,Australia,San Francisco Bay Area Stadium
+61,26/06/2026,20:00,I,Norway,France,Boston Stadium
+62,26/06/2026,20:00,I,Senegal,Iraq,Toronto Stadium
+63,27/06/2026,04:00,G,Egypt,IR Iran,Seattle Stadium
+64,27/06/2026,04:00,G,New Zealand,Belgium,BC Place Vancouver
+65,27/06/2026,01:00,H,Cabo Verde,Saudi Arabia,Houston Stadium
+66,27/06/2026,01:00,H,Uruguay,Spain,Guadalajara Stadium
+67,27/06/2026,22:00,L,Panama,England,New York New Jersey Stadium
+68,27/06/2026,22:00,L,Croatia,Ghana,Philadelphia Stadium
+69,28/06/2026,03:00,J,Algeria,Austria,Kansas City Stadium
+70,28/06/2026,03:00,J,Jordan,Argentina,Dallas Stadium
+71,28/06/2026,00:30,K,Colombia,Portugal,Miami Stadium
+72,28/06/2026,00:30,K,Congo DR,Uzbekistan,Atlanta Stadium
+73,28/06/2026,20:00,,2A,2B,Los Angeles Stadium
+74,29/06/2026,21:30,,1E,3ABCDF,Boston Stadium
+75,30/06/2026,02:00,,1F,2C,Monterrey Stadium
+76,29/06/2026,18:00,,1C,2F,Houston Stadium
+77,30/06/2026,22:00,,1I,3CDFGH,New York New Jersey Stadium
+78,30/06/2026,18:00,,2E,2I,Dallas Stadium
+79,01/07/2026,02:00,,1A,3CEFHI,Mexico City Stadium
+80,01/07/2026,17:00,,1L,3EHIJK,Atlanta Stadium
+81,02/07/2026,01:00,,1D,3BEFIJ,San Francisco Bay Area Stadium
+82,01/07/2026,21:00,,1G,3AEHIJ,Seattle Stadium
+83,03/07/2026,00:00,,2K,2L,Toronto Stadium
+84,02/07/2026,20:00,,1H,2J,Los Angeles Stadium
+85,03/07/2026,04:00,,1B,3EFGIJ,BC Place Vancouver
+86,03/07/2026,23:00,,1J,2H,Miami Stadium
+87,04/07/2026,02:30,,1K,3DEIJL,Kansas City Stadium
+88,03/07/2026,19:00,,2D,2G,Dallas Stadium
+89,04/07/2026,22:00,,Winner match 74,Winner match 77,Philadelphia Stadium
+90,04/07/2026,18:00,,Winner match 73,Winner match 75,Houston Stadium
+91,05/07/2026,21:00,,Winner match 76,Winner match 78,New York New Jersey Stadium
+92,06/07/2026,01:00,,Winner match 79,Winner match 80,Mexico City Stadium
+93,06/07/2026,20:00,,Winner match 83,Winner match 84,Dallas Stadium
+94,07/07/2026,01:00,,Winner match 81,Winner match 82,Seattle Stadium
+95,07/07/2026,17:00,,Winner match 86,Winner match 88,Atlanta Stadium
+96,07/07/2026,21:00,,Winner match 85,Winner match 87,BC Place Vancouver
+97,09/07/2026,21:00,,Winner match 89,Winner match 90,Boston Stadium
+98,10/07/2026,20:00,,Winner match 93,Winner match 94,Los Angeles Stadium
+99,11/07/2026,22:00,,Winner match 91,Winner match 92,Miami Stadium
+100,12/07/2026,02:00,,Winner match 95,Winner match 96,Kansas City Stadium
+101,14/07/2026,20:00,,Winner match 97,Winner match 98,Dallas Stadium
+102,15/07/2026,20:00,,Winner match 99,Winner match 100,Atlanta Stadium
+103,18/07/2026,22:00,,Runner-up match 101,Runner-up match 102,Miami Stadium
+104,19/07/2026,20:00,,Winner match 101,Winner match 102,New York New Jersey Stadium
