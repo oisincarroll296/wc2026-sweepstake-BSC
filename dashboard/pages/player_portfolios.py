@@ -435,7 +435,7 @@ with col_extras:
         _sp_map = [
             ("ShirtRemovals",  "Shirt Removals",        "+25 each",  25,  False),
             ("GKGoals",        "Goalkeeper Goals",       "+75 each",  75,  False),
-            ("RedCards",       "Red Cards",              "-15 each",  -15, True),
+            ("RedCards",       "Red Cards",              "-5 each",   -5,  True),
             ("FirstEliminated","First Team Eliminated",  "+35",       35,  False),
         ]
         for _col, _label, _note, _per, _negative in _sp_map:
