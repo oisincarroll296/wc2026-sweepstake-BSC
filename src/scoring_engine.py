@@ -591,20 +591,41 @@ def calculate_leaderboard(
             player, assignments, match_stats, purchases,
             captains, predictions, tr, tier_map,
         )
+        all_teams = list({*info["group_stage_teams"], *info["knockout_teams"]})
+        bd: dict[str, float] = {}
+        for t in all_teams:
+            for k, v in info["team_points"].get(t, {}).get("breakdown", {}).items():
+                bd[k] = bd.get(k, 0.0) + float(v)
+
         rows.append({
-            "Player": player,
-            "BasePoints": info["base_total"],
-            "CaptainBonus": info["captain"]["total"],
-            "InsuranceBonus": info["insurance_bonus"],
-            "SpecialBonus": info["special_bonus"],
+            "Player":          player,
+            "BasePoints":      info["base_total"],
+            "CaptainBonus":    info["captain"]["total"],
+            "InsuranceBonus":  info["insurance_bonus"],
+            "SpecialBonus":    info["special_bonus"],
             "PredictionBonus": info["predictions"]["total"],
-            "TotalPoints": info["grand_total"],
+            "TotalPoints":     info["grand_total"],
+            "GoalsPoints":      bd.get("GroupGoals", 0) + bd.get("KnockoutGoals", 0),
+            "CleanSheetPoints": bd.get("GroupCleanSheets", 0) + bd.get("KnockoutCleanSheets", 0),
+            "WinPoints":        bd.get("GroupWins", 0) + bd.get("KnockoutWins", 0) + bd.get("GroupWinner", 0),
+            "WinBonusPoints":   (bd.get("GroupPenaltyWins", 0) + bd.get("KnockoutPenaltyWins", 0) +
+                                 bd.get("GroupComebackWins", 0) + bd.get("KnockoutComebackWins", 0)),
+            "HatTrickPoints":   bd.get("GroupHatTricks", 0) + bd.get("KnockoutHatTricks", 0),
+            "UpsetPoints":      sum(v for k, v in bd.items() if "UpsetWins" in k),
+            "ProgressionPoints": sum(v for k, v in bd.items() if k.startswith("Progression_")),
+            "ShirtPoints":      bd.get("ShirtRemovals", 0),
+            "GKGoalPoints":     bd.get("GKGoals", 0),
+            "RedCardPoints":    bd.get("RedCards", 0),
+            "FirstElimPoints":  bd.get("FirstEliminated", 0),
         })
 
     if not rows:
         return pd.DataFrame(columns=[
             "Rank", "Player", "BasePoints", "CaptainBonus",
             "InsuranceBonus", "SpecialBonus", "PredictionBonus", "TotalPoints",
+            "GoalsPoints", "CleanSheetPoints", "WinPoints", "WinBonusPoints",
+            "HatTrickPoints", "UpsetPoints", "ProgressionPoints",
+            "ShirtPoints", "GKGoalPoints", "RedCardPoints", "FirstElimPoints",
         ])
 
     lb = (

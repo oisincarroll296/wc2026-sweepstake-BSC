@@ -28,20 +28,48 @@ tab_prize, tab_all = st.tabs(["🏆 Prize Standings", "🌍 All Players"])
 
 # ── shared helpers ─────────────────────────────────────────────────────────
 
-BREAKDOWN_COLS = ["BasePoints", "CaptainBonus", "InsuranceBonus", "SpecialBonus", "PredictionBonus"]
+BREAKDOWN_COLS = [
+    "GoalsPoints", "CleanSheetPoints", "WinPoints", "WinBonusPoints",
+    "HatTrickPoints", "UpsetPoints", "ProgressionPoints",
+    "CaptainBonus", "InsuranceBonus",
+    "ShirtPoints", "GKGoalPoints", "RedCardPoints", "FirstElimPoints",
+    "PredictionBonus",
+]
 BREAKDOWN_LABELS = {
-    "BasePoints":      "Match Pts",
-    "CaptainBonus":    "Captain",
-    "InsuranceBonus":  "Insurance",
-    "SpecialBonus":    "Special",
-    "PredictionBonus": "Predictions",
+    "GoalsPoints":      "Goals",
+    "CleanSheetPoints": "Clean Sheets",
+    "WinPoints":        "Wins",
+    "WinBonusPoints":   "Pen/Comeback",
+    "HatTrickPoints":   "Hat Tricks",
+    "UpsetPoints":      "Upset Wins",
+    "ProgressionPoints":"Progression",
+    "CaptainBonus":     "Captain",
+    "InsuranceBonus":   "Insurance",
+    "ShirtPoints":      "Shirt Off",
+    "GKGoalPoints":     "GK Goal",
+    "RedCardPoints":    "Red Cards",
+    "FirstElimPoints":  "1st Elim",
+    "PredictionBonus":  "Predictions",
+    "BasePoints":       "Match Pts",
+    "SpecialBonus":     "Special",
 }
 BREAKDOWN_COLORS = {
-    "BasePoints":      "#4A6FA5",
-    "CaptainBonus":    "#D4A017",
-    "InsuranceBonus":  "#15803D",
-    "SpecialBonus":    "#7C3AED",
-    "PredictionBonus": "#B91C1C",
+    "GoalsPoints":      "#3B82F6",
+    "CleanSheetPoints": "#06B6D4",
+    "WinPoints":        "#10B981",
+    "WinBonusPoints":   "#34D399",
+    "HatTrickPoints":   "#F59E0B",
+    "UpsetPoints":      "#EF4444",
+    "ProgressionPoints":"#8B5CF6",
+    "CaptainBonus":     "#D4A017",
+    "InsuranceBonus":   "#15803D",
+    "ShirtPoints":      "#EC4899",
+    "GKGoalPoints":     "#F97316",
+    "RedCardPoints":    "#991B1B",
+    "FirstElimPoints":  "#6366F1",
+    "PredictionBonus":  "#B91C1C",
+    "BasePoints":       "#4A6FA5",
+    "SpecialBonus":     "#7C3AED",
 }
 
 
@@ -189,8 +217,8 @@ with tab_prize:
             use_container_width=True, hide_index=True,
         )
         st.caption(
-            "Match = team goals/clean sheets/bonuses/progression/upsets · "
-            "Potential = max remaining points from surviving teams · "
+            "Match pts split by event type in chart above · "
+            "Potential = max remaining progression points · "
             "Chance = softmax win probability"
         )
 
