@@ -1,1 +1,2 @@
-match_number,home_goals,away_goals,extra_time,penalty_winner,comeback_home,comeback_away
+match_number,home_goals,away_goals,extra_time,penalty_winner,comeback_home,comeback_away,home_hat_tricks,away_hat_tricks,home_red_cards,away_red_cards,home_shirt_off,away_shirt_off,home_gk_goals,away_gk_goals,home_first_eliminated,away_first_eliminated
+1,2,0,0,,0,0,0,0,1,2,0,0,0,0,0,0
