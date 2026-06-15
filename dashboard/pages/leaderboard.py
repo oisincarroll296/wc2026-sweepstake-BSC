@@ -174,15 +174,17 @@ def _breakdown_table(lb: pd.DataFrame) -> None:
         td     = "padding:0.26rem 0.5rem;font-size:0.8rem;text-align:center;"
         bd     = player_bd.get(player, {})
 
+        _DECIMAL_COLS = {"Captain", "Insure", "Preds"}
         cells = f'<td style="{td}text-align:left;color:#F1F5F9;font-weight:{fw}">{player}</td>'
         for label, _, color in _BREAKDOWN_GROUPS:
             val = bd.get(_BD_KEY.get(label, ""), 0.0)
+            fmt = ".1f" if label in _DECIMAL_COLS else ".0f"
             if val == 0:
                 cells += f'<td style="{td}color:#374151">—</td>'
             elif val > 0:
-                cells += f'<td style="{td}color:{color};font-weight:600">{val:.0f}</td>'
+                cells += f'<td style="{td}color:{color};font-weight:600">{val:{fmt}}</td>'
             else:
-                cells += f'<td style="{td}color:#EF4444;font-weight:600">{val:.0f}</td>'
+                cells += f'<td style="{td}color:#EF4444;font-weight:600">{val:{fmt}}</td>'
 
         cells += f'<td style="{td}text-align:right;color:#F1F5F9;font-weight:700">{total:.1f}</td>'
         rows_html += f'<tr style="border-top:1px solid #1E293B;{bg}">{cells}</tr>'
