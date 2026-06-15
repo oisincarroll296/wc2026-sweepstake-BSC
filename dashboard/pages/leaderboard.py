@@ -1,12 +1,10 @@
 """Leaderboard — Prize standings + All Players with full score breakdown."""
 import sys, math
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+_p = str(Path(__file__).resolve().parent.parent.parent); sys.path.insert(0, _p) if _p not in sys.path else None
 
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
-
 from dashboard.data import (
     get_prize_leaderboard, get_overall_leaderboard,
     get_prize_pool, get_remaining_potential, get_player_goals_wins,
@@ -50,6 +48,7 @@ BREAKDOWN_LABELS = {
     "RedCardPoints":    "Red Cards",
     "FirstElimPoints":  "1st Elim",
     "PredictionBonus":  "Predictions",
+    # legacy key — kept so existing cached DataFrames don't break
     "BasePoints":       "Match Pts",
     "SpecialBonus":     "Special",
 }
@@ -68,35 +67,69 @@ BREAKDOWN_COLORS = {
     "RedCardPoints":    "#991B1B",
     "FirstElimPoints":  "#6366F1",
     "PredictionBonus":  "#B91C1C",
+    # legacy
     "BasePoints":       "#4A6FA5",
     "SpecialBonus":     "#7C3AED",
 }
 
 
-def _stacked_chart(lb: pd.DataFrame, title: str):
-    """Stacked bar chart: one bar per player coloured by score category."""
+_BREAKDOWN_GROUPS = [
+    ("Goals",    ["GoalsPoints"],                                              "#3B82F6"),
+    ("CS",       ["CleanSheetPoints"],                                         "#06B6D4"),
+    ("Wins",     ["WinPoints"],                                                "#10B981"),
+    ("Pen/CB",   ["WinBonusPoints"],                                           "#34D399"),
+    ("H-Trick",  ["HatTrickPoints"],                                           "#F59E0B"),
+    ("Upsets",   ["UpsetPoints"],                                              "#EF4444"),
+    ("Progress", ["ProgressionPoints"],                                        "#8B5CF6"),
+    ("Captain",  ["CaptainBonus"],                                             "#D4A017"),
+    ("Insure",   ["InsuranceBonus"],                                           "#15803D"),
+    ("Special",  ["ShirtPoints", "GKGoalPoints", "FirstElimPoints"],           "#EC4899"),
+    ("RedCards", ["RedCardPoints"],                                            "#991B1B"),
+    ("Preds",    ["PredictionBonus"],                                          "#B91C1C"),
+]
+
+
+def _breakdown_table(lb: pd.DataFrame) -> None:
+    """Per-player score breakdown table — one row per player, one column per category."""
     if lb.empty:
         return
-    players = lb["Player"].tolist()
-    fig = go.Figure()
-    for col in BREAKDOWN_COLS:
-        if col not in lb.columns:
-            continue
-        vals = lb[col].fillna(0).astype(float).tolist()
-        if all(v == 0 for v in vals):
-            continue
-        fig.add_trace(go.Bar(
-            name=BREAKDOWN_LABELS[col],
-            x=players,
-            y=vals,
-            marker_color=BREAKDOWN_COLORS[col],
-            hovertemplate=f"<b>%{{x}}</b><br>{BREAKDOWN_LABELS[col]}: %{{y:.0f}} pts<extra></extra>",
-        ))
-    _layout = {**PLOTLY_LAYOUT}
-    _layout["legend"] = {**_layout.get("legend", {}), "orientation": "h", "y": -0.25, "x": 0, "font": {"size": 11}}
-    _layout["margin"] = dict(l=5, r=5, t=35, b=60)
-    fig.update_layout(barmode="stack", title=title, height=320, **_layout)
-    st.plotly_chart(fig, use_container_width=True)
+
+    th = "color:#9CA3AF;font-size:0.62rem;font-weight:600;padding:0.28rem 0.5rem;white-space:nowrap;text-align:center"
+    header = f'<th style="{th};text-align:left">Player</th>'
+    for label, _, color in _BREAKDOWN_GROUPS:
+        header += f'<th style="{th};border-top:2px solid {color}">{label}</th>'
+    header += f'<th style="{th};text-align:right">Total</th>'
+
+    rows_html = ""
+    for _, row in lb.iterrows():
+        rank   = int(row.get("Rank", 0))
+        player = row["Player"]
+        total  = float(row.get("TotalPoints", 0))
+        bg     = "background:rgba(212,160,23,0.10);" if rank == 1 else ""
+        fw     = "700" if rank == 1 else "400"
+        td     = "padding:0.26rem 0.5rem;font-size:0.8rem;text-align:center;"
+
+        cells = f'<td style="{td}text-align:left;color:#F1F5F9;font-weight:{fw}">{player}</td>'
+        for _, src_cols, color in _BREAKDOWN_GROUPS:
+            val = sum(float(row.get(c, 0)) for c in src_cols if c in lb.columns)
+            if val == 0:
+                cells += f'<td style="{td}color:#374151">—</td>'
+            elif val > 0:
+                cells += f'<td style="{td}color:{color};font-weight:600">{val:.0f}</td>'
+            else:
+                cells += f'<td style="{td}color:#EF4444;font-weight:600">{val:.0f}</td>'
+
+        cells += f'<td style="{td}text-align:right;color:#F1F5F9;font-weight:700">{total:.0f}</td>'
+        rows_html += f'<tr style="border-top:1px solid #1E293B;{bg}">{cells}</tr>'
+
+    st.markdown(
+        '<div style="overflow-x:auto;margin-bottom:0.5rem">'
+        '<table style="width:100%;border-collapse:collapse">'
+        f'<thead><tr style="background:#0D1B2A">{header}</tr></thead>'
+        f'<tbody style="background:#131D2A">{rows_html}</tbody>'
+        '</table></div>',
+        unsafe_allow_html=True,
+    )
 
 
 def _breakdown_bar(row: dict) -> str:
@@ -137,8 +170,8 @@ def _format_lb(lb: pd.DataFrame, show_prize: bool = False) -> pd.DataFrame:
         spec   = float(row.get("SpecialBonus", 0))
         pred   = float(row.get("PredictionBonus", 0))
         rem    = pot.get(player, 0)
-        goals  = _goals_map.get(player, 0)
-        wins   = _wins_map.get(player, 0)
+        goals = _goals_map.get(player, 0)
+        wins  = _wins_map.get(player, 0)
         r = {
             "":         medal,
             "Player":   player,
@@ -148,7 +181,7 @@ def _format_lb(lb: pd.DataFrame, show_prize: bool = False) -> pd.DataFrame:
             "⚽ Goals": str(goals) if goals else "—",
             "🏆 Wins":  str(wins)  if wins  else "—",
             "Captain":  f"+{cap:.0f}" if cap else "—",
-            "Special":  f"+{spec:.0f}" if spec else "—",
+            "Special":  f"{spec:+.0f}" if spec else "—",
             "Insurance":f"+{ins:.0f}" if ins else "—",
             "Preds":    f"+{pred:.0f}" if pred else "—",
             "Potential":f"+{rem:.0f}",
@@ -200,8 +233,9 @@ with tab_prize:
         _exps   = [math.exp((s - min(_scores)) / _temp) for s in _scores]
         _probs  = [e / sum(_exps) * 100 for e in _exps]
 
-        # Stacked breakdown chart
-        _stacked_chart(lb_prize, "Score Breakdown by Category")
+        # Score breakdown table
+        st.subheader("Score Breakdown")
+        _breakdown_table(lb_prize)
 
         st.subheader("Standings")
         display = _format_lb(lb_prize, show_prize=True)
@@ -217,20 +251,8 @@ with tab_prize:
             use_container_width=True, hide_index=True,
         )
         st.caption(
-            "Match pts split by event type in chart above · "
             "Potential = max remaining progression points · "
             "Chance = softmax win probability"
-        )
-
-        # Legend
-        st.markdown(
-            '<div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:0.25rem">' +
-            "".join(
-                f'<span style="background:{BREAKDOWN_COLORS[c]};color:#fff;font-size:0.7rem;'
-                f'border-radius:3px;padding:2px 7px">{BREAKDOWN_LABELS[c]}</span>'
-                for c in BREAKDOWN_COLS
-            ) + "</div>",
-            unsafe_allow_html=True,
         )
 
 
@@ -243,7 +265,8 @@ with tab_all:
     if lb_all.empty:
         empty_state("No players found.")
     else:
-        _stacked_chart(lb_all, "Score Breakdown — All Players")
+        st.subheader("Score Breakdown")
+        _breakdown_table(lb_all)
 
         st.subheader("All Players")
         display_all = _format_lb(lb_all)

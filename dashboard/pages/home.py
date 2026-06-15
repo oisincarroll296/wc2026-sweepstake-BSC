@@ -1,7 +1,7 @@
 """Home page — tournament overview dashboard."""
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+_p = str(Path(__file__).resolve().parent.parent.parent); sys.path.insert(0, _p) if _p not in sys.path else None
 
 import urllib.parse as _urlparse
 
@@ -11,8 +11,9 @@ from datetime import datetime
 
 from dashboard.data import (
     get_prize_pool, get_overall_leaderboard, get_top_team,
-    get_paid_count, get_events,
+    get_paid_count, get_pack_count, get_audit_log, get_events,
     get_assignments, get_participants, get_deadlines, countdown, DEADLINE_LABELS,
+    get_fixtures, get_match_results,
 )
 from dashboard.components.ui import page_header, empty_state
 
@@ -112,18 +113,69 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# ── All deadlines expander ─────────────────────────────────────────────────
+if deadlines:
+    with st.expander("All Deadlines"):
+        for key, iso in deadlines.items():
+            label = DEADLINE_LABELS.get(key, key.replace("_", " ").title())
+            cd = countdown(iso)
+            passed = cd == "PASSED"
+            colour = "#6B7280" if passed else "#F5F5F5"
+            cd_colour = "#6B7280" if passed else "#D4A017"
+            try:
+                from datetime import timedelta, timezone as _tz
+                _IST = _tz(timedelta(hours=1))
+                _dt = datetime.fromisoformat(iso).astimezone(_IST)
+                display_time = f"{_dt.day} {_dt.strftime('%b %Y %H:%M')}"
+            except Exception:
+                display_time = iso
+            st.markdown(
+                f'<div style="display:flex;justify-content:space-between;'
+                f'padding:0.3rem 0;border-bottom:1px solid #2A3A4A">'
+                f'<span style="color:{colour};font-size:0.88rem">{label}</span>'
+                f'<span style="font-size:0.85rem">'
+                f'<span style="color:#9CA3AF">{display_time}</span>'
+                f'&nbsp;&nbsp;<strong style="color:{cd_colour}">{cd}</strong>'
+                f'</span></div>',
+                unsafe_allow_html=True,
+            )
+        st.markdown("")
+
 # ── KPI Row ────────────────────────────────────────────────────────────────
 pool     = get_prize_pool()
 paid     = get_paid_count()
+packs    = get_pack_count()
 top_t, top_pts = get_top_team()
 lb       = get_overall_leaderboard()
+_assignments = get_assignments()
 
-r1c1, r1c2, r1c3 = st.columns(3)
+# Compute total matches played per player (sum across all owned teams)
+try:
+    _mr = get_match_results()
+    _played_teams: dict[str, int] = {}
+    if not _mr.empty and "home_team" in _mr.columns:
+        for _, _rrow in _mr.iterrows():
+            for _tc in ["home_team", "away_team"]:
+                _t = str(_rrow.get(_tc, "")).strip()
+                if _t:
+                    _played_teams[_t] = _played_teams.get(_t, 0) + 1
+    _player_played: dict[str, int] = {
+        p: sum(_played_teams.get(t, 0) for t in ts)
+        for p, ts in _assignments.items()
+    }
+except Exception:
+    _player_played = {}
+
+r1c1, r1c2 = st.columns(2)
+r2c1, r2c2 = st.columns(2)
 with r1c1:
-    st.metric("Prize Pool", f"€{pool.get('current_pot', 0):.0f}")
+    st.metric("Prize Pool", f"€{pool.get('current_pot', 0):.2f}",
+              help="Sum of all player budgets (money in the Revolut pocket)")
 with r1c2:
-    st.metric("Paid In", f"{paid} / {len(lb)}" if not lb.empty else str(paid))
-with r1c3:
+    st.metric("Paid Players", f"{paid} / {len(lb)}" if not lb.empty else str(paid))
+with r2c1:
+    st.metric("Prediction Packs", packs)
+with r2c2:
     if top_t:
         st.metric("Top Team", top_t, f"{top_pts:.0f} pts")
     else:
@@ -146,14 +198,17 @@ with col_left:
             rank   = int(row.get("Rank", 0))
             pts    = float(row.get("TotalPoints", 0))
             status = row.get("PaymentStatus", "UNPAID")
+            player = row.get("Player", "")
             medal  = {1: "🥇", 2: "🥈", 3: "🥉"}.get(rank, f"#{rank}")
             gap    = f"{pts - leader_pts:+.0f}" if rank > 1 else "—"
+            played = _player_played.get(player, 0)
             rows.append({
-                "":       medal,
-                "Player": row.get("Player", ""),
-                "Points": f"{pts:.0f}",
-                "Gap":    gap,
-                "Status": status,
+                "":        medal,
+                "Player":  player,
+                "Points":  f"{pts:.0f}",
+                "Gap":     gap,
+                "Played":  str(played) if played else "0",
+                "Status":  status,
             })
 
         display = pd.DataFrame(rows)
@@ -173,6 +228,25 @@ with col_left:
         )
 
 with col_right:
+    # Prize Split
+    st.subheader("Prize Split")
+    pool_val = pool.get("current_pot", 0)
+    splits = [
+        ("🥇 1st Place", pool.get("first_prize", 0)),
+        ("🥈 2nd Place", pool.get("second_prize", 0)),
+        ("🥉 3rd Place", pool.get("third_prize", 0)),
+    ]
+    for label, amount in splits:
+        pct = f"{amount / pool_val * 100:.0f}%" if pool_val else "—"
+        st.markdown(
+            f'<div class="card" style="display:flex;justify-content:space-between;align-items:center">'
+            f'<span>{label}</span>'
+            f'<span style="color:#D4A017;font-size:1.05rem;font-weight:700">'
+            f'€{amount:.2f} <span style="color:#9CA3AF;font-size:0.75rem">{pct}</span>'
+            f'</span></div>',
+            unsafe_allow_html=True,
+        )
+
     # Today's Fixtures
     st.subheader("Today's Fixtures")
     try:
@@ -219,3 +293,93 @@ with col_right:
     except Exception:
         pass
 
+    # Next Event
+    def _render_next_fixtures() -> None:
+        from datetime import date as _date, timedelta as _td2
+        _fix = get_fixtures()
+        if _fix.empty:
+            st.markdown('<div class="card"><span style="color:#9CA3AF">No upcoming fixtures.</span></div>', unsafe_allow_html=True)
+            return
+        _today = _date.today()
+        _tomorrow = _today + _td2(days=1)
+        _day_fix = pd.DataFrame()
+        for _target in [_tomorrow, None]:
+            if _target:
+                _candidate = _fix[_fix["match_date"] == _target.strftime("%d/%m/%Y")]
+            else:
+                _future = _fix[pd.to_datetime(_fix["match_date"], format="%d/%m/%Y", errors="coerce") > pd.Timestamp(_today)]
+                if _future.empty:
+                    st.markdown('<div class="card"><span style="color:#9CA3AF">No upcoming fixtures.</span></div>', unsafe_allow_html=True)
+                    return
+                _next_date = pd.to_datetime(_future["match_date"], format="%d/%m/%Y", errors="coerce").min()
+                _candidate = _fix[pd.to_datetime(_fix["match_date"], format="%d/%m/%Y", errors="coerce") == _next_date]
+            if not _candidate.empty:
+                _day_fix = _candidate
+                break
+
+        if _day_fix.empty:
+            st.markdown('<div class="card"><span style="color:#9CA3AF">No upcoming fixtures.</span></div>', unsafe_allow_html=True)
+            return
+
+        _dt = pd.to_datetime(_day_fix.iloc[0]["match_date"], format="%d/%m/%Y", errors="coerce")
+        try:
+            _day_label = "Tomorrow" if _dt.date() == _tomorrow else _dt.strftime("%A") + " " + str(_dt.day) + " " + _dt.strftime("%b")
+        except Exception:
+            _day_label = str(_dt.date())
+
+        st.markdown(
+            f'<p style="color:#D4A017;font-weight:700;font-size:0.85rem;margin:0 0 0.4rem">'
+            f'{_day_label} · {len(_day_fix)} match{"es" if len(_day_fix) != 1 else ""}</p>',
+            unsafe_allow_html=True,
+        )
+        for _, _m in _day_fix.iterrows():
+            _ko = str(_m.get("kickoff_time", "")).strip()
+            _grp = str(_m.get("group", "")).strip()
+            _lbl = f"Group {_grp}" if _grp else "Knockout"
+            _time_str = f"{_ko} GMT · " if _ko else ""
+            st.markdown(
+                f'<div class="card" style="padding:0.4rem 0.7rem;margin:0.2rem 0">'
+                f'<span style="color:#F1F5F9;font-weight:600">'
+                f'{_m["home_team"]} <span style="color:#6B7280">vs</span> {_m["away_team"]}</span>'
+                f'<span style="color:#6B7280;font-size:0.72rem;float:right">{_time_str}{_lbl}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+    st.subheader("Next Event")
+    if not events.empty:
+        scheduled = events[events["Status"].isin(["SCHEDULED", "OPEN"])]
+        if not scheduled.empty:
+            nxt = scheduled.iloc[0]
+            try:
+                from datetime import timedelta as _td, timezone as _tz2
+                _IST2 = _tz2(_td(hours=1))
+                _sched_iso = str(nxt.get("ScheduledTime", "") or "")
+                _sched_label = datetime.fromisoformat(_sched_iso).astimezone(_IST2).strftime("%d %b %H:%M") if _sched_iso else ""
+            except Exception:
+                _sched_label = ""
+            st.markdown(
+                f'<div class="card-gold">'
+                f'<p style="color:#D4A017;font-weight:700;margin:0">'
+                f'{str(nxt["EventType"]).replace("_", " ")}</p>'
+                f'<p style="color:#9CA3AF;font-size:0.8rem;margin:0.25rem 0 0">'
+                f'{_sched_label}</p>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            _render_next_fixtures()
+    else:
+        _render_next_fixtures()
+
+st.divider()
+
+# ── Recent Activity ────────────────────────────────────────────────────────
+st.subheader("Recent Activity")
+audit = get_audit_log()
+if audit.empty:
+    empty_state("No activity recorded yet.")
+else:
+    recent = audit.tail(10).iloc[::-1].reset_index(drop=True)
+    show = [c for c in ["Timestamp", "Event", "Player", "Action", "Result"] if c in recent.columns]
+    st.dataframe(recent[show], use_container_width=True, hide_index=True)

@@ -297,7 +297,7 @@ def get_fixtures() -> pd.DataFrame:
 
 @st.cache_data(ttl=10)
 def get_match_results() -> pd.DataFrame:
-    """Load match_results.csv — entered match scores."""
+    """Load match_results.csv joined with fixture team names."""
     p = _ROOT / "data" / "match_results.csv"
     if not p.exists():
         return pd.DataFrame()
@@ -310,6 +310,15 @@ def get_match_results() -> pd.DataFrame:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
         for col in ["extra_time", "comeback_home", "comeback_away"]:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
+        fix_p = _ROOT / "data" / "fixtures.csv"
+        if fix_p.exists():
+            fix = pd.read_csv(fix_p, dtype=str).fillna("")
+            fix["match_number"] = pd.to_numeric(fix["match_number"], errors="coerce").astype("Int64")
+            fix["match_date"] = pd.to_datetime(fix["match_date"], dayfirst=True, errors="coerce").dt.date
+            df = df.merge(
+                fix[["match_number", "match_date", "home_team", "away_team", "group", "venue", "kickoff_time"]],
+                on="match_number", how="left",
+            )
         return df
     except Exception:
         return pd.DataFrame()

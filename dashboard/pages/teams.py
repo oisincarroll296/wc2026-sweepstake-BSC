@@ -1,7 +1,7 @@
 """Teams — Groups, Standings, Fixtures, and Ownership in one place."""
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+_p = str(Path(__file__).resolve().parent.parent.parent); sys.path.insert(0, _p) if _p not in sys.path else None
 
 import streamlit as st
 import pandas as pd
@@ -44,8 +44,8 @@ for _, _row in teams_df.iterrows():
 
 group_map = dict(zip(teams_df["Team"], teams_df["Group"])) if not teams_df.empty else {}
 
-tab_groups, tab_standings, tab_fixtures, tab_ownership = st.tabs([
-    "Groups", "Standings", "Fixtures", "Ownership",
+tab_groups, tab_standings, tab_fixtures, tab_results, tab_ownership = st.tabs([
+    "Groups", "Standings", "Fixtures", "Results", "Ownership",
 ])
 
 # ═══════════════════════════════════════════════════════════════════
@@ -341,7 +341,137 @@ with tab_fixtures:
                     )
 
 # ═══════════════════════════════════════════════════════════════════
-# TAB 4 — OWNERSHIP
+# TAB 4 — RESULTS
+# ═══════════════════════════════════════════════════════════════════
+with tab_results:
+    if results_df.empty or "home_team" not in results_df.columns:
+        st.info("No results entered yet.")
+    else:
+        all_owned_r = {t for ts in assignments.values() for t in ts} if assignments else set()
+        tier_map_r  = {str(r["Team"]): int(r.get("Tier", 4)) for _, r in teams_df.iterrows()}
+
+        # Sort most recent first
+        res_sorted = results_df.copy()
+        if "match_date" in res_sorted.columns:
+            res_sorted = res_sorted.sort_values("match_date", ascending=False, na_position="last")
+        else:
+            res_sorted = res_sorted.sort_values("match_number", ascending=False)
+
+        def _tier_badge_r(team: str) -> str:
+            tier = tier_map_r.get(team, 0)
+            if not tier:
+                return ""
+            color = TIER_COLORS.get(tier, "#9CA3AF")
+            return (
+                f'<span style="background:{color}33;color:{color};font-size:0.58rem;'
+                f'font-weight:700;border-radius:3px;padding:1px 4px;margin-right:3px">T{tier}</span>'
+            )
+
+        st.markdown(
+            f'<div style="color:#9CA3AF;font-size:0.8rem;margin-bottom:0.6rem">'
+            f'{len(res_sorted)} result{"s" if len(res_sorted) != 1 else ""} entered'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+        # Group by date
+        if "match_date" in res_sorted.columns:
+            date_groups = res_sorted.groupby("match_date", sort=False)
+            dates_ordered = res_sorted["match_date"].dropna().unique()
+        else:
+            dates_ordered = []
+
+        def _render_result_card(m: "pd.Series") -> None:
+            home = str(m.get("home_team", "—"))
+            away = str(m.get("away_team", "—"))
+            hg   = int(float(m.get("home_goals", 0) or 0))
+            ag   = int(float(m.get("away_goals", 0) or 0))
+            grp  = str(m.get("group", "")).strip()
+            venue = str(m.get("venue", "")).strip()
+            ko   = str(m.get("kickoff_time", "")).strip()
+            et   = int(float(m.get("extra_time", 0) or 0))
+            pw   = str(m.get("penalty_winner", "")).strip()
+            mn   = m.get("match_number", "")
+
+            home_owned = home in all_owned_r
+            away_owned = away in all_owned_r
+            home_owners = ", ".join(ownership_map.get(home, []))
+            away_owners = ", ".join(ownership_map.get(away, []))
+
+            if hg > ag:
+                result_tag = f'<span style="color:#6EE7B7;font-size:0.62rem">W</span>'
+                home_fw, away_fw = "800", "400"
+            elif ag > hg:
+                result_tag = f'<span style="color:#6EE7B7;font-size:0.62rem">W</span>'
+                home_fw, away_fw = "400", "800"
+            else:
+                result_tag = f'<span style="color:#9CA3AF;font-size:0.62rem">D</span>'
+                home_fw, away_fw = "600", "600"
+
+            suffix = ""
+            if pw:
+                suffix = f'<div style="color:#F59E0B;font-size:0.6rem;text-align:center">Pens: {pw}</div>'
+            elif et:
+                suffix = f'<div style="color:#9CA3AF;font-size:0.6rem;text-align:center">AET</div>'
+
+            border_style = "border:1px solid #D4A017;" if (home_owned or away_owned) else "border:1px solid #2A3A4A;"
+            round_label  = f"Group {grp}" if grp else "Knockout"
+            venue_short  = venue.replace(" Stadium", "").replace("Estadio ", "") if venue else ""
+            ko_label     = f" · {ko} GMT" if ko else ""
+
+            home_owner_html = f'<div style="color:#6EE7B7;font-size:0.65rem;margin-top:2px">{home_owners}</div>' if home_owners else '<div style="font-size:0.65rem"> </div>'
+            away_owner_html = f'<div style="color:#6EE7B7;font-size:0.65rem;margin-top:2px">{away_owners}</div>' if away_owners else '<div style="font-size:0.65rem"> </div>'
+
+            st.markdown(
+                f'<div style="background:#1E2937;border-radius:7px;padding:0.55rem 0.8rem;'
+                f'margin:0.25rem 0;{border_style}">'
+                f'<div style="display:flex;justify-content:space-between;margin-bottom:0.35rem;align-items:center">'
+                f'<span style="color:#6B7280;font-size:0.65rem">{round_label}{ko_label}&nbsp;&nbsp;'
+                f'<span style="color:#374151">#{mn}</span></span>'
+                f'<span style="color:#4B5563;font-size:0.63rem">{venue_short}</span>'
+                f'</div>'
+                f'<div style="display:flex;align-items:center;gap:0.5rem">'
+                f'<div style="flex:1;text-align:right">'
+                f'<div style="display:flex;align-items:center;justify-content:flex-end;gap:4px">'
+                f'{_tier_badge_r(home)}'
+                f'<span style="color:{"#D4A017" if home_owned else "#F1F5F9"};font-weight:{home_fw};font-size:0.88rem">{home}</span>'
+                f'</div>{home_owner_html}</div>'
+                f'<div style="text-align:center;min-width:4rem">'
+                f'<span style="color:#6EE7B7;font-size:1.1rem;font-weight:800">{hg} – {ag}</span>'
+                f'<div style="color:#6B7280;font-size:0.58rem">FT</div>'
+                f'{suffix}</div>'
+                f'<div style="flex:1;text-align:left">'
+                f'<div style="display:flex;align-items:center;gap:4px">'
+                f'<span style="color:{"#D4A017" if away_owned else "#F1F5F9"};font-weight:{away_fw};font-size:0.88rem">{away}</span>'
+                f'{_tier_badge_r(away)}'
+                f'</div>{away_owner_html}</div>'
+                f'</div></div>',
+                unsafe_allow_html=True,
+            )
+
+        if len(dates_ordered):
+            for match_date in dates_ordered:
+                day_matches = res_sorted[res_sorted["match_date"] == match_date]
+                _ts = pd.Timestamp(match_date)
+                try:
+                    day_label = f"{_ts.day} {_ts.strftime('%b %Y')}"
+                except Exception:
+                    day_label = str(match_date)
+                st.markdown(
+                    f'<div style="color:#D4A017;font-weight:700;font-size:0.88rem;'
+                    f'margin:0.9rem 0 0.35rem;border-bottom:1px solid #2A3A4A;padding-bottom:0.15rem">'
+                    f'{day_label} · {len(day_matches)} match{"es" if len(day_matches)!=1 else ""}</div>',
+                    unsafe_allow_html=True,
+                )
+                for _, m in day_matches.iterrows():
+                    _render_result_card(m)
+        else:
+            for _, m in res_sorted.iterrows():
+                _render_result_card(m)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# TAB 5 — OWNERSHIP
 # ═══════════════════════════════════════════════════════════════════
 with tab_ownership:
     ownership_data = get_team_ownership_data()
