@@ -8,6 +8,7 @@ import pandas as pd
 from dashboard.data import (
     get_prize_leaderboard, get_overall_leaderboard,
     get_prize_pool, get_remaining_potential, get_player_goals_wins,
+    get_match_stats, get_assignments,
 )
 from dashboard.config import PLOTLY_LAYOUT, COLORS
 from dashboard.components.ui import page_header, empty_state
@@ -89,10 +90,73 @@ _BREAKDOWN_GROUPS = [
 ]
 
 
+def _compute_breakdown(lb: pd.DataFrame) -> dict[str, dict]:
+    """Build per-player breakdown dict from raw match_stats — always fresh, no stale-cache risk."""
+    ms  = get_match_stats()
+    asn = get_assignments()
+
+    def _f(row, col):
+        return float(row.get(col, 0) or 0)
+
+    team_bd: dict[str, dict] = {}
+    if not ms.empty:
+        for _, r in ms.iterrows():
+            t = str(r["Team"])
+            team_bd[t] = {
+                "goals":    _f(r, "GroupGoals") + _f(r, "KnockoutGoals"),
+                "cs":       (_f(r, "GroupCleanSheets") + _f(r, "KnockoutCleanSheets")) * 2,
+                "wins":     (_f(r, "GroupWins") + _f(r, "KnockoutWins") + _f(r, "GroupWinner")) * 3,
+                "pencb":    (_f(r, "GroupPenaltyWins") + _f(r, "KnockoutPenaltyWins") +
+                             _f(r, "GroupComebackWins") + _f(r, "KnockoutComebackWins")) * 3,
+                "hattrick": (_f(r, "GroupHatTricks") + _f(r, "KnockoutHatTricks")) * 10,
+                "upsets":   ((_f(r, "GroupUpsetWins1") + _f(r, "KnockoutUpsetWins1")) * 15 +
+                             (_f(r, "GroupUpsetWins2") + _f(r, "KnockoutUpsetWins2")) * 30 +
+                             (_f(r, "GroupUpsetWins3") + _f(r, "KnockoutUpsetWins3")) * 50),
+                "special":  (_f(r, "ShirtRemovals") * 25 + _f(r, "GKGoals") * 75 +
+                             _f(r, "FirstEliminated") * 35),
+                "redcards": _f(r, "RedCards") * -5,
+            }
+
+    player_bd: dict[str, dict] = {}
+    for _, row in lb.iterrows():
+        player = row["Player"]
+        teams  = list(asn.get(player, []))
+        bd: dict[str, float] = {k: 0.0 for k in ["goals","cs","wins","pencb","hattrick","upsets","special","redcards"]}
+        for t in teams:
+            for k, v in team_bd.get(t, {}).items():
+                bd[k] += v
+        # Pull complex columns (captain, insurance, predictions, progression) from lb itself
+        bd["captain"]    = float(row.get("CaptainBonus", 0) or 0)
+        bd["insurance"]  = float(row.get("InsuranceBonus", 0) or 0)
+        bd["preds"]      = float(row.get("PredictionBonus", 0) or 0)
+        bd["progress"]   = float(row.get("ProgressionPoints", 0) or 0)
+        player_bd[player] = bd
+    return player_bd
+
+
+# Map _BREAKDOWN_GROUPS labels → bd keys
+_BD_KEY = {
+    "Goals":    "goals",
+    "CS":       "cs",
+    "Wins":     "wins",
+    "Pen/CB":   "pencb",
+    "H-Trick":  "hattrick",
+    "Upsets":   "upsets",
+    "Progress": "progress",
+    "Captain":  "captain",
+    "Insure":   "insurance",
+    "Special":  "special",
+    "RedCards": "redcards",
+    "Preds":    "preds",
+}
+
+
 def _breakdown_table(lb: pd.DataFrame) -> None:
-    """Per-player score breakdown table — one row per player, one column per category."""
+    """Per-player score breakdown table — computed fresh from raw match stats."""
     if lb.empty:
         return
+
+    player_bd = _compute_breakdown(lb)
 
     th = "color:#9CA3AF;font-size:0.62rem;font-weight:600;padding:0.28rem 0.5rem;white-space:nowrap;text-align:center"
     header = f'<th style="{th};text-align:left">Player</th>'
@@ -103,15 +167,16 @@ def _breakdown_table(lb: pd.DataFrame) -> None:
     rows_html = ""
     for _, row in lb.iterrows():
         rank   = int(row.get("Rank", 0))
-        player = row["Player"]
-        total  = float(row.get("TotalPoints", 0))
+        player = str(row["Player"])
+        total  = float(row.get("TotalPoints", 0) or 0)
         bg     = "background:rgba(212,160,23,0.10);" if rank == 1 else ""
         fw     = "700" if rank == 1 else "400"
         td     = "padding:0.26rem 0.5rem;font-size:0.8rem;text-align:center;"
+        bd     = player_bd.get(player, {})
 
         cells = f'<td style="{td}text-align:left;color:#F1F5F9;font-weight:{fw}">{player}</td>'
-        for _, src_cols, color in _BREAKDOWN_GROUPS:
-            val = sum(float(row.get(c, 0)) for c in src_cols if c in lb.columns)
+        for label, _, color in _BREAKDOWN_GROUPS:
+            val = bd.get(_BD_KEY.get(label, ""), 0.0)
             if val == 0:
                 cells += f'<td style="{td}color:#374151">—</td>'
             elif val > 0:
@@ -119,7 +184,7 @@ def _breakdown_table(lb: pd.DataFrame) -> None:
             else:
                 cells += f'<td style="{td}color:#EF4444;font-weight:600">{val:.0f}</td>'
 
-        cells += f'<td style="{td}text-align:right;color:#F1F5F9;font-weight:700">{total:.0f}</td>'
+        cells += f'<td style="{td}text-align:right;color:#F1F5F9;font-weight:700">{total:.1f}</td>'
         rows_html += f'<tr style="border-top:1px solid #1E293B;{bg}">{cells}</tr>'
 
     st.markdown(
