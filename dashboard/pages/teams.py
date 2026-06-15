@@ -110,6 +110,30 @@ with tab_standings:
     else:
         from src.scoring_engine import calculate_team_points as _ctp_s
 
+        # Build per-team match record (P/W/D/L/GF/GA) from match_results
+        _team_rec: dict[str, dict] = {}
+        if not results_df.empty and "home_team" in results_df.columns:
+            for _, _rr in results_df.iterrows():
+                _h = str(_rr.get("home_team", "") or "")
+                _a = str(_rr.get("away_team", "") or "")
+                _g = str(_rr.get("group", "") or "").strip()
+                if not _h or not _a or not _g:
+                    continue  # skip knockout matches
+                _hg = int(float(_rr.get("home_goals", 0) or 0))
+                _ag = int(float(_rr.get("away_goals", 0) or 0))
+                for _team, _gf, _ga in [(_h, _hg, _ag), (_a, _ag, _hg)]:
+                    if _team not in _team_rec:
+                        _team_rec[_team] = {"Played": 0, "Won": 0, "Drew": 0, "Lost": 0, "Scored": 0, "Against": 0}
+                    _team_rec[_team]["Played"]  += 1
+                    _team_rec[_team]["Scored"]  += _gf
+                    _team_rec[_team]["Against"] += _ga
+                    if _gf > _ga:
+                        _team_rec[_team]["Won"]  += 1
+                    elif _gf == _ga:
+                        _team_rec[_team]["Drew"] += 1
+                    else:
+                        _team_rec[_team]["Lost"] += 1
+
         rows_s = []
         for _, row in stats_df.iterrows():
             team = str(row["Team"])
@@ -119,22 +143,29 @@ with tab_standings:
             tier = tier_map_local.get(team, 4)
             rnd  = str(row.get("RoundReached", "") or "").strip()
             bp   = _ctp_s(team, stats_df, tier)
+            rec  = _team_rec.get(team, {"Played": 0, "Won": 0, "Drew": 0, "Lost": 0, "Scored": 0, "Against": 0})
             rows_s.append({
                 "Group": grp, "Team": team, "_tier": tier,
-                "W":   int(float(row.get("GroupWins", 0) or 0)),
-                "GF":  int(float(row.get("GroupGoals", 0) or 0)),
-                "CS":  int(float(row.get("GroupCleanSheets", 0) or 0)),
-                "Pts": int(bp["total"]),
-                "GW":  int(float(row.get("GroupWinner", 0) or 0)),
+                "Played":       rec["Played"],
+                "Won":          rec["Won"],
+                "Drew":         rec["Drew"],
+                "Lost":         rec["Lost"],
+                "Scored":       rec["Scored"],
+                "Against":      rec["Against"],
+                "Clean Sheets": int(float(row.get("GroupCleanSheets", 0) or 0)),
+                "Swp Pts":      round(bp["total"], 1),
+                "GW":           int(float(row.get("GroupWinner", 0) or 0)),
                 "RoundReached": rnd,
-                "_rr": _ROUND_RANK.get(rnd, -1),
+                "_rr":          _ROUND_RANK.get(rnd, -1),
             })
 
         stand_df = pd.DataFrame(rows_s)
+        th = "color:#6B7280;font-size:0.62rem;font-weight:600;padding:0.2rem 0.4rem;text-align:center;white-space:nowrap"
+
         for g_letter in sorted(stand_df["Group"].unique()):
             grp_df = (
                 stand_df[stand_df["Group"] == g_letter]
-                .sort_values(["GW", "_rr", "W", "GF"], ascending=[False, False, False, False])
+                .sort_values(["GW", "_rr", "Won", "Scored"], ascending=[False, False, False, False])
                 .reset_index(drop=True)
             )
 
@@ -152,7 +183,7 @@ with tab_standings:
                 elif rnd == "GroupStage":
                     status_col = "#6B7280"
                 else:
-                    status_col = "#6B7280"
+                    status_col = "#9CA3AF"
 
                 rnd_label = _ROUND_LABEL.get(rnd, "—")
                 gw_badge = (
@@ -165,36 +196,54 @@ with tab_standings:
                     f'<div style="color:#6EE7B7;font-size:0.62rem;margin-top:1px">{", ".join(owners)}</div>'
                 ) if owners else ""
 
+                td = "font-size:0.82rem;text-align:center;padding:0.32rem 0.4rem;"
+                played = r["Played"]
+                won    = r["Won"]
+                drew   = r["Drew"]
+                lost   = r["Lost"]
+                scored = r["Scored"]
+                agst   = r["Against"]
+                cs     = r["Clean Sheets"]
+                pts    = r["Swp Pts"]
+
                 rows_html += (
                     f'<tr style="border-top:1px solid #2A3A4A">'
-                    f'<td style="color:#9CA3AF;font-size:0.78rem;text-align:center;padding:0.32rem 0.4rem;width:1.8rem">{pos}</td>'
+                    f'<td style="color:#9CA3AF;font-size:0.78rem;text-align:center;padding:0.32rem 0.4rem;width:1.5rem">{pos}</td>'
                     f'<td style="padding:0.32rem 0.5rem">'
                     f'<div style="display:flex;align-items:center;gap:0.3rem">'
                     f'<span style="color:{color};font-size:0.6rem;font-weight:700;background:{color}22;border-radius:3px;padding:0 3px">T{tier}</span>'
                     f'<span style="color:#F5F5F5;font-weight:600;font-size:0.85rem">{team}</span>'
                     f'{gw_badge}</div>{owners_html}</td>'
-                    f'<td style="color:#F5F5F5;font-size:0.82rem;text-align:center;padding:0.32rem 0.4rem">{r["W"]}</td>'
-                    f'<td style="color:#F5F5F5;font-size:0.82rem;text-align:center;padding:0.32rem 0.4rem">{r["GF"]}</td>'
-                    f'<td style="color:#F5F5F5;font-size:0.82rem;text-align:center;padding:0.32rem 0.4rem">{r["CS"]}</td>'
-                    f'<td style="color:#D4A017;font-weight:700;font-size:0.88rem;text-align:center;padding:0.32rem 0.4rem">{r["Pts"]}</td>'
+                    f'<td style="color:#9CA3AF;{td}">{played}</td>'
+                    f'<td style="color:#6EE7B7;{td}">{won}</td>'
+                    f'<td style="color:#9CA3AF;{td}">{drew}</td>'
+                    f'<td style="color:#F87171;{td}">{lost}</td>'
+                    f'<td style="color:#F5F5F5;{td}">{scored}</td>'
+                    f'<td style="color:#9CA3AF;{td}">{agst}</td>'
+                    f'<td style="color:#06B6D4;{td}">{cs}</td>'
+                    f'<td style="color:#D4A017;font-weight:700;font-size:0.88rem;text-align:center;padding:0.32rem 0.4rem">{pts}</td>'
                     f'<td style="color:{status_col};font-size:0.72rem;padding:0.32rem 0.5rem">{rnd_label}</td>'
                     f'</tr>'
                 )
 
             st.markdown(
-                f'<div style="margin-bottom:1.4rem">'
+                f'<div style="margin-bottom:1.4rem;overflow-x:auto">'
                 f'<div style="color:#D4A017;font-weight:700;font-size:0.95rem;'
                 f'margin:0.8rem 0 0;border-bottom:1px solid #2A3A4A;padding-bottom:0.2rem">'
                 f'Group {g_letter}</div>'
                 f'<table style="width:100%;border-collapse:collapse">'
                 f'<thead><tr style="background:#131D2A">'
-                f'<th style="color:#6B7280;font-size:0.62rem;font-weight:600;padding:0.2rem 0.4rem;text-align:center">#</th>'
-                f'<th style="color:#6B7280;font-size:0.62rem;font-weight:600;padding:0.2rem 0.5rem;text-align:left">Team</th>'
-                f'<th style="color:#6B7280;font-size:0.62rem;font-weight:600;padding:0.2rem 0.4rem;text-align:center">W</th>'
-                f'<th style="color:#6B7280;font-size:0.62rem;font-weight:600;padding:0.2rem 0.4rem;text-align:center">GF</th>'
-                f'<th style="color:#6B7280;font-size:0.62rem;font-weight:600;padding:0.2rem 0.4rem;text-align:center">CS</th>'
-                f'<th style="color:#6B7280;font-size:0.62rem;font-weight:600;padding:0.2rem 0.4rem;text-align:center">Sweepstake Pts</th>'
-                f'<th style="color:#6B7280;font-size:0.62rem;font-weight:600;padding:0.2rem 0.5rem;text-align:left">Status</th>'
+                f'<th style="{th};text-align:center">#</th>'
+                f'<th style="{th};text-align:left">Team</th>'
+                f'<th style="{th}">Played</th>'
+                f'<th style="{th}">Won</th>'
+                f'<th style="{th}">Drew</th>'
+                f'<th style="{th}">Lost</th>'
+                f'<th style="{th}">Scored</th>'
+                f'<th style="{th}">Against</th>'
+                f'<th style="{th}">Clean Sheets</th>'
+                f'<th style="{th}">Sweepstake Pts</th>'
+                f'<th style="{th};text-align:left">Status</th>'
                 f'</tr></thead>'
                 f'<tbody style="background:#1E2937">{rows_html}</tbody>'
                 f'</table></div>',
