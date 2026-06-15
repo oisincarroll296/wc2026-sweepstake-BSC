@@ -1,7 +1,7 @@
 """Player Portfolios — per-player deep-dive."""
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+_p = str(Path(__file__).resolve().parent.parent.parent); sys.path.insert(0, _p) if _p not in sys.path else None
 
 import streamlit as st
 import pandas as pd
@@ -37,12 +37,10 @@ st.query_params["player"] = player
 # Shareable link — derive the full URL from the request Host header
 import urllib.parse as _urlparse
 try:
-    _host = st.context.headers.get("host", "localhost:8502")
-    _scheme = "https" if "streamlit.app" in _host else "http"
+    _host = st.context.headers.get("host", "localhost:8501")
 except Exception:
-    _host = "localhost:8502"
-    _scheme = "http"
-_share_url = f"{_scheme}://{_host}/player_portfolios?player={_urlparse.quote(player)}"
+    _host = "localhost:8501"
+_share_url = f"http://{_host}/player_portfolios?player={_urlparse.quote(player)}"
 with st.expander("📤 Share my portfolio link", expanded=False):
     st.markdown("Send this URL directly to your profile:")
     st.code(_share_url, language=None)
@@ -101,7 +99,7 @@ st.markdown(
     f'<div style="color:#F5F5F5;font-weight:700;font-size:1.05rem">{base_total:.0f}</div></div>'
     f'<div style="background:#0D1B2A;border-radius:6px;padding:0.35rem 0.7rem;text-align:center">'
     f'<div style="color:#9CA3AF;font-size:0.68rem">CAPTAIN</div>'
-    f'<div style="color:#6EE7B7;font-weight:700;font-size:1.05rem">+{captain_bonus:.0f}</div></div>'
+    f'<div style="color:#6EE7B7;font-weight:700;font-size:1.05rem">+{captain_bonus:.1f}</div></div>'
     f'<div style="background:#0D1B2A;border-radius:6px;padding:0.35rem 0.7rem;text-align:center">'
     f'<div style="color:#9CA3AF;font-size:0.68rem">INSURANCE</div>'
     f'<div style="color:{"#6EE7B7" if insurance_pts > 0 else ("#D4A017" if has_ins else "#9CA3AF")};font-weight:700;font-size:1.05rem">+{insurance_pts:.0f}</div></div>'
@@ -353,7 +351,7 @@ with col_extras:
             f'<div><div style="color:#9CA3AF;font-size:0.72rem">{cap_type} Captain</div>'
             f'<div style="color:#F5F5F5;font-weight:700;font-size:0.95rem">{team_name}</div>'
             f'<div style="color:#9CA3AF;font-size:0.7rem">{base_pts:.0f} pts × 0.5 — {note}</div></div>'
-            f'<div style="color:{bonus_col};font-weight:700;font-size:1.1rem">+{bonus_pts:.0f}</div>'
+            f'<div style="color:{bonus_col};font-weight:700;font-size:1.1rem">+{bonus_pts:.1f}</div>'
             f'</div></div>',
             unsafe_allow_html=True,
         )
@@ -570,6 +568,37 @@ with col_extras:
             unsafe_allow_html=True,
         )
 
+# ── Mulligan History ───────────────────────────────────────────────────────
+_mulligan_path = Path(__file__).resolve().parent.parent.parent / "data" / "mulligan_results.csv"
+if _mulligan_path.exists():
+    _mul_df = pd.read_csv(_mulligan_path, dtype=str).fillna("")
+    _player_mulligans = _mul_df[_mul_df["Player"] == player]
+    if not _player_mulligans.empty:
+        st.divider()
+        st.subheader("🎲 Mulligan Draw History")
+        for _, _mr in _player_mulligans.iterrows():
+            _prev = [t.strip() for t in str(_mr.get("PreviousTeams", "")).split("|") if t.strip()]
+            _new  = [t.strip() for t in str(_mr.get("NewTeams", "")).split("|") if t.strip()]
+            _removed = [t for t in _prev if t not in _new]
+            _added   = [t for t in _new  if t not in _prev]
+            st.markdown(
+                '<div class="card" style="padding:0.6rem 0.75rem">'
+                '<div style="color:#9CA3AF;font-size:0.72rem;margin-bottom:0.4rem">ORIGINAL TEAMS REPLACED</div>'
+                + "".join(
+                    f'<span style="background:#7f1d1d;color:#fca5a5;padding:0.15rem 0.5rem;'
+                    f'border-radius:4px;font-size:0.82rem;margin:0.15rem;display:inline-block">{t}</span>'
+                    for t in _removed
+                )
+                + '<div style="color:#9CA3AF;font-size:0.72rem;margin:0.4rem 0 0.2rem">NEW TEAMS RECEIVED</div>'
+                + "".join(
+                    f'<span style="background:#14532d;color:#86efac;padding:0.15rem 0.5rem;'
+                    f'border-radius:4px;font-size:0.82rem;margin:0.15rem;display:inline-block">{t}</span>'
+                    for t in _added
+                )
+                + "</div>",
+                unsafe_allow_html=True,
+            )
+
 # ── Head-to-Head Comparison ────────────────────────────────────────────────
 st.divider()
 st.subheader("⚔️ Head-to-Head Comparison")
@@ -629,7 +658,7 @@ if h2h_opponent:
         )
 
     _h2h_row("Team Points",    base_total,    h2h_result.get("base_total", 0))
-    _h2h_row("Captain Bonus",  captain_bonus, h2h_cap_info.get("total", 0))
+    _h2h_row("Captain Bonus",  captain_bonus, h2h_cap_info.get("total", 0), fmt=".1f")
     _h2h_row("Special Events", special_bonus, h2h_spec)
     _h2h_row("Insurance",      insurance_pts, h2h_ins)
     _h2h_row("Predictions",    pred_total,    h2h_pred)
