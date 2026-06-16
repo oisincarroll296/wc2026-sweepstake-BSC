@@ -282,11 +282,14 @@ def repick_participant(
         for team in teams:
             other_usage[team] = other_usage.get(team, 0) + 1
 
+    n_players = len(alloc.assignments)
+    _, max_app = _appearance_limits(n_players, t)
+
     best_result: Allocation | None = None
     best_spread = float("inf")
 
     for _ in range(max_attempts):
-        new_teams = _try_pick_one(other_usage, t)
+        new_teams = _try_pick_one(other_usage, t, max_appearances=max_app)
         if new_teams is None:
             continue
 
@@ -492,7 +495,7 @@ def _try_generate(participants: list[str], teams_per_tier: int) -> dict[str, lis
     return assignments
 
 
-def _try_pick_one(other_usage: dict[str, int], teams_per_tier: int) -> list[str] | None:
+def _try_pick_one(other_usage: dict[str, int], teams_per_tier: int, max_appearances: int = 3) -> list[str] | None:
     """Pick a valid set of teams for one participant given fixed usage from all others."""
     assigned: list[str] = []
 
@@ -501,7 +504,7 @@ def _try_pick_one(other_usage: dict[str, int], teams_per_tier: int) -> list[str]
 
         eligible = [
             t for t in _teams_in_tier[tier]
-            if other_usage.get(t, 0) < 3 and _group_of[t] not in used_groups
+            if other_usage.get(t, 0) < max_appearances and _group_of[t] not in used_groups
         ]
         if len(eligible) < teams_per_tier:
             return None
