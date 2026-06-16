@@ -31,7 +31,7 @@ EXPORTS_DIR = _ROOT / "exports"
 
 ALLOCATION_PATH           = DATA_DIR / "allocation.csv"
 PAYMENT_LEDGER_PATH       = DATA_DIR / "payment_ledger.csv"
-MULLIGAN_RESULTS_PATH     = EXPORTS_DIR / "mulligan_results.csv"
+MULLIGAN_RESULTS_PATH     = DATA_DIR / "mulligan_results.csv"
 NINTH_RESULTS_PATH        = EXPORTS_DIR / "ninth_team_results.csv"
 RESURRECTION_RESULTS_PATH = EXPORTS_DIR / "resurrection_results.csv"
 RANDOM_SEEDS_PATH         = EXPORTS_DIR / "random_seeds.csv"
