@@ -1,0 +1,34 @@
+name: Daily Score Snapshot
+
+on:
+  schedule:
+    - cron: '50 23 * * *'
+  workflow_dispatch:
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install pandas pyyaml
+
+      - name: Run snapshot
+        run: python snapshot_today.py
+
+      - name: Commit if changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/score_history.csv
+          git diff --cached --quiet || git commit -m "Auto: daily score snapshot $(date -u +%Y-%m-%d)"
+          git push
