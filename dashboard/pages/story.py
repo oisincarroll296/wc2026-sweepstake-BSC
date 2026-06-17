@@ -58,9 +58,9 @@ def _flag_url(team: str, w: int = 40) -> str:
 def _flag_img(team: str, h: int = 20) -> str:
     u = _flag_url(team, 40)
     if not u:
-        return ""
-    return (f'<img src="{u}" style="height:{h}px;border-radius:2px;'
-            f'vertical-align:middle;margin-right:5px" title="{team}">')
+        return f'<span style="font-size:{h}px;vertical-align:middle;margin-right:5px">🏴</span>'
+    return (f'<img src="{u}" style="height:{h}px;border-radius:2px;vertical-align:middle;margin-right:5px"'
+            f' title="{team}" onerror="this.style.display=\'none\'">')
 
 # ── AI image generation via Pollinations.ai (free, no API key) ────────────────
 
@@ -552,7 +552,8 @@ def _render_newspaper(story: dict, meta: dict, context: dict, best_days: list) -
     # ── Masthead ───────────────────────────────────────────────────────────
     flag_strip = "".join(
         f'<img src="{_flag_url(t,40)}" '
-        f'style="height:20px;border-radius:2px;margin:0 2px;vertical-align:middle" title="{t}">'
+        f'style="height:20px;border-radius:2px;margin:0 2px;vertical-align:middle" title="{t}"'
+        f' onerror="this.style.display=\'none\'">'
         for t in ft[:12] if _flag_url(t, 40)
     )
     st.markdown(
@@ -693,8 +694,12 @@ def _render_newspaper(story: dict, meta: dict, context: dict, best_days: list) -
         fc_cols = st.columns(len(featured_cards))
         for col, card in zip(fc_cols, featured_cards):
             flag_u = _flag_url(card["team"], 80)
-            flag_html = (f'<img src="{flag_u}" style="width:60px;border-radius:4px;'
-                         f'display:block;margin:0 auto 0.5rem">') if flag_u else ""
+            flag_html = (
+                f'<img src="{flag_u}" style="width:60px;border-radius:4px;display:block;margin:0 auto 0.5rem"'
+                f' onerror="this.outerHTML=\'<div style=&quot;width:60px;height:38px;background:{card["color"]}22;'
+                f'border-radius:4px;display:flex;align-items:center;justify-content:center;'
+                f'margin:0 auto 0.5rem;font-size:1.5rem&quot;>⚽</div>\'">'
+            ) if flag_u else f'<div style="font-size:1.5rem;margin-bottom:0.5rem">⚽</div>'
             col.markdown(
                 f'<div style="background:white;border-top:3px solid {card["color"]};'
                 f'border:1px solid {_BORDER}22;border-top:3px solid {card["color"]};'
@@ -777,7 +782,9 @@ def _render_newspaper(story: dict, meta: dict, context: dict, best_days: list) -
             st.markdown(
                 f'<div style="background:white;border:2px solid {_BORDER};border-radius:6px;'
                 f'padding:1.2rem 0.8rem;text-align:center;font-family:Georgia,serif">'
-                + (f'<img src="{flag_u}" style="width:70px;border-radius:4px;margin-bottom:0.6rem">' if flag_u else "")
+                + (f'<img src="{flag_u}" style="width:70px;border-radius:4px;margin-bottom:0.6rem"'
+                   f' onerror="this.outerHTML=\'<div style=&quot;font-size:2rem;margin-bottom:0.6rem&quot;>🏴</div>\'">'
+                   if flag_u else '<div style="font-size:2rem;margin-bottom:0.6rem">🏴</div>')
                 + f'<div style="font-size:0.65rem;font-weight:900;letter-spacing:0.1em;color:{_RED}">SPOTLIGHT</div>'
                 f'</div>',
                 unsafe_allow_html=True,
@@ -1011,7 +1018,6 @@ if _generate_clicked:
     with st.spinner("Crunching data and writing the story…"):
         try:
             ctx       = _build_story_context(date_from=_date_from, date_to=_date_to)
-            best_days = _build_best_day_table()
             story_out = _generate_story(ctx, _api_key, topic=_topic, suggestions=_suggestions)
             _cache = {
                 "generated_at":    datetime.now().strftime("%d %b %Y at %H:%M"),
@@ -1020,7 +1026,7 @@ if _generate_clicked:
                 "topic":           _topic.strip(),
                 "story":           story_out,
                 "context":         ctx,
-                "best_days":       best_days,
+                # best_days is intentionally NOT cached — always computed fresh from local data
             }
             _save_cache(_cache)
             st.rerun()
@@ -1033,7 +1039,7 @@ if _cache and "story" in _cache and "context" in _cache:
         story     = _cache["story"],
         meta      = _cache,
         context   = _cache["context"],
-        best_days = _cache.get("best_days") or _build_best_day_table(),
+        best_days = _build_best_day_table(),   # always fresh from local score_history.csv
     )
 elif _cache and "story" in _cache:
     try:
