@@ -2,9 +2,10 @@
 import sys
 import json
 import re
+import hashlib
+import urllib.parse
 from datetime import datetime, date, timedelta
 from pathlib import Path
-from urllib.request import urlopen, Request
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
@@ -61,41 +62,19 @@ def _flag_img(team: str, h: int = 20) -> str:
     return (f'<img src="{u}" style="height:{h}px;border-radius:2px;'
             f'vertical-align:middle;margin-right:5px" title="{team}">')
 
-# ── Player images (server-side fetched to bypass hotlink restrictions) ────────
-_PLAYER_IMG: dict[str, str] = {
-    "Lionel Messi":      "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b4/Lionel-Messi-Argentina-2022-FIFA-World-Cup_%28cropped%29.jpg/400px-Lionel-Messi-Argentina-2022-FIFA-World-Cup_%28cropped%29.jpg",
-    "Messi":             "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b4/Lionel-Messi-Argentina-2022-FIFA-World-Cup_%28cropped%29.jpg/400px-Lionel-Messi-Argentina-2022-FIFA-World-Cup_%28cropped%29.jpg",
-    "Cristiano Ronaldo": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8c/Cristiano_Ronaldo_2018.jpg/400px-Cristiano_Ronaldo_2018.jpg",
-    "Ronaldo":           "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8c/Cristiano_Ronaldo_2018.jpg/400px-Cristiano_Ronaldo_2018.jpg",
-    "Kylian Mbappe":     "https://upload.wikimedia.org/wikipedia/commons/thumb/5/57/2019-07-17_SG_Dynamo_Dresden_vs_Paris_Saint-Germain_by_Sandro_Halank%E2%80%93165_%28cropped%29.jpg/400px-2019-07-17_SG_Dynamo_Dresden_vs_Paris_Saint-Germain_by_Sandro_Halank%E2%80%93165_%28cropped%29.jpg",
-    "Mbappe":            "https://upload.wikimedia.org/wikipedia/commons/thumb/5/57/2019-07-17_SG_Dynamo_Dresden_vs_Paris_Saint-Germain_by_Sandro_Halank%E2%80%93165_%28cropped%29.jpg/400px-2019-07-17_SG_Dynamo_Dresden_vs_Paris_Saint-Germain_by_Sandro_Halank%E2%80%93165_%28cropped%29.jpg",
-    "Erling Haaland":    "https://upload.wikimedia.org/wikipedia/commons/thumb/5/59/Erling_Haaland_2023_%28cropped%29.jpg/400px-Erling_Haaland_2023_%28cropped%29.jpg",
-    "Haaland":           "https://upload.wikimedia.org/wikipedia/commons/thumb/5/59/Erling_Haaland_2023_%28cropped%29.jpg/400px-Erling_Haaland_2023_%28cropped%29.jpg",
-    "Vinicius Junior":   "https://upload.wikimedia.org/wikipedia/commons/thumb/0/04/Vinicius_Jr_2023.jpg/400px-Vinicius_Jr_2023.jpg",
-    "Vinicius":          "https://upload.wikimedia.org/wikipedia/commons/thumb/0/04/Vinicius_Jr_2023.jpg/400px-Vinicius_Jr_2023.jpg",
-    "Neymar":            "https://upload.wikimedia.org/wikipedia/commons/thumb/b/bc/Neymar_2022.jpg/400px-Neymar_2022.jpg",
-    "Lamine Yamal":      "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a7/Lamine_Yamal_2024_%28cropped%29.jpg/400px-Lamine_Yamal_2024_%28cropped%29.jpg",
-    "Yamal":             "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a7/Lamine_Yamal_2024_%28cropped%29.jpg/400px-Lamine_Yamal_2024_%28cropped%29.jpg",
-    "Jude Bellingham":   "https://upload.wikimedia.org/wikipedia/commons/thumb/9/99/Jude_Bellingham_2023.jpg/400px-Jude_Bellingham_2023.jpg",
-    "Bellingham":        "https://upload.wikimedia.org/wikipedia/commons/thumb/9/99/Jude_Bellingham_2023.jpg/400px-Jude_Bellingham_2023.jpg",
-}
+# ── AI image generation via Pollinations.ai (free, no API key) ────────────────
 
-def _find_player_url(name: str) -> str:
-    nl = name.lower().strip()
-    for k, v in _PLAYER_IMG.items():
-        if k.lower() in nl or nl in k.lower():
-            return v
-    return ""
+def _ai_img_url(prompt: str, w: int = 400, h: int = 500) -> str:
+    """Generate a deterministic AI image URL from Pollinations.ai."""
+    seed = int(hashlib.md5(prompt.encode()).hexdigest()[:8], 16) % 99999
+    enc  = urllib.parse.quote(prompt)
+    return f"https://image.pollinations.ai/prompt/{enc}?width={w}&height={h}&nologo=true&seed={seed}&model=flux"
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def _fetch_img(url: str) -> bytes | None:
-    """Fetch image bytes server-side so Wikipedia hotlink protection is bypassed."""
-    try:
-        req = Request(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64)"})
-        with urlopen(req, timeout=10) as r:
-            return r.read()
-    except Exception:
-        return None
+def _player_art_url(name: str, team: str, context: str = "") -> str:
+    parts = [f"{name}", f"{team} national football team", "portrait", "dramatic stadium lighting", "photorealistic"]
+    if context:
+        parts.append(context)
+    return _ai_img_url(" ".join(parts))
 
 
 # ── Cache ─────────────────────────────────────────────────────────────────────
@@ -383,31 +362,35 @@ OUTPUT — respond ONLY with a single valid JSON object, no markdown fences:
   "subheadline": "One dramatic sentence expanding the headline",
   "lead_paragraph": "The single most dramatic moment. 4-5 sentences. Name scorelines, teams, sweepstake owners.",
   "sections": [
-    {{"title": "SECTION TITLE IN CAPS", "content": "4-5 sentences covering one distinct theme. Never repeat facts from other sections."}},
+    {{"title": "SECTION TITLE IN CAPS", "content": "4-5 sentences. One distinct theme. No repeated facts across sections."}},
     {{"title": "...", "content": "..."}},
     {{"title": "...", "content": "..."}},
     {{"title": "...", "content": "..."}},
     {{"title": "...", "content": "..."}}
   ],
   "player_spotlight": {{
-    "name": "Full player name that matches someone notable in the data",
+    "name": "Full player name notable in the data",
     "team": "Their national team",
     "achievement": "One-line stat or moment",
-    "narrative": "3-4 sentences telling their story dramatically. Name their sweepstake owners."
+    "narrative": "3-4 sentences dramatically. Name their sweepstake owners."
   }},
-  "featured_players": ["Full player name from data", "..."],
-  "sweepstake_digest": "4-5 sentences: who leads, who is climbing, name any unpaid players doing well and suggest they should pay up",
-  "pull_quote": "One vivid sentence that works as a big standalone pull quote",
+  "image_subjects": [
+    {{"name": "player or team name", "team": "national team", "context": "what they did e.g. scored hat trick"}},
+    {{"name": "...", "team": "...", "context": "..."}}
+  ],
+  "sweepstake_digest": "4-5 sentences: who leads, who is climbing, name unpaid players doing well and suggest they pay up",
+  "pull_quote": "One vivid standalone sentence for a big pull quote",
   "looking_ahead": "2-3 sentences on upcoming fixtures or moments to watch"
 }}
 
 RULES:
-- 5 sections minimum each covering a DIFFERENT theme e.g. biggest results / upsets / special events / goals / sweepstake standings / dark horse watch
+- 5 sections covering DIFFERENT themes from: key match results, goals and attacking play, sweepstake standings drama, dark horse watch, comeback stories, group stage battles, any interesting angle
+- DO NOT write sections about upsets or special events (hat tricks, red cards, shirt removals) — those are shown as graphics separately
 - Name sweepstake players when their teams do something notable
-- Use real scorelines only never invent facts
+- Use real scorelines only — never invent facts
 - No repeated information across sections
-- player_spotlight must be a real notable player from the data
-- featured_players only list players you can identify from the data
+- player_spotlight must be the single most notable player from the data
+- image_subjects: list 2-3 subjects to generate AI artwork for (player names or team moments)
 - Tone: passionate tabloid football journalist
 """
 
@@ -531,6 +514,14 @@ def _special_event_card(ev: dict) -> str:
 
 # ── Main render ────────────────────────────────────────────────────────────────
 
+# Themes that have dedicated graphic sections — skip LLM text sections for these
+_GRAPHIC_THEMES = {"UPSET","SPECIAL","RED CARD","HAT TRICK","HAT-TRICK","SHIRT OFF","SHIRT REMOVAL","GK GOAL"}
+
+def _is_graphic_theme(title: str) -> bool:
+    tu = title.upper()
+    return any(w in tu for w in _GRAPHIC_THEMES)
+
+
 def _render_newspaper(story: dict, meta: dict, context: dict, best_days: list) -> None:
     ft        = context.get("featured_teams", [])
     upsets    = context.get("upsets", [])
@@ -540,7 +531,7 @@ def _render_newspaper(story: dict, meta: dict, context: dict, best_days: list) -
     matches   = context.get("match_results", [])
     hat_tricks= context.get("hat_tricks", [])
     prize     = context.get("prize_pool", 0)
-    fp_names  = story.get("featured_players", [])
+    img_subjs = story.get("image_subjects", [])
     spotlight = story.get("player_spotlight", {})
     sections  = story.get("sections", [])
 
@@ -638,7 +629,7 @@ def _render_newspaper(story: dict, meta: dict, context: dict, best_days: list) -
         f'<div style="font-size:clamp(1.5rem,4vw,2.4rem);font-weight:900;color:{_INK};'
         f'line-height:1.15;letter-spacing:0.01em">{headline}</div>'
         f'<div style="color:{_RED};font-size:1rem;font-style:italic;margin-top:0.4rem">{subheadline}</div>'
-        f'<div style="color:{_LIGHT};font-size:0.68rem;margin-top:0.3rem">'
+        f'<div style="color:{_MID};font-size:0.68rem;margin-top:0.3rem">'
         f'By Your Sweepstake Correspondent'
         + (f' · <em>{meta.get("topic","")}</em>' if meta.get("topic") else "") +
         f'</div></div>',
@@ -662,46 +653,62 @@ def _render_newspaper(story: dict, meta: dict, context: dict, best_days: list) -
                 f'<div style="background:white;border-top:4px solid {_RED};'
                 f'border-bottom:4px solid {_RED};padding:1rem;margin-top:0.8rem">'
                 f'<div style="font-size:0.6rem;font-weight:900;letter-spacing:0.1em;'
-                f'color:{_LIGHT};margin-bottom:0.5rem">PULL QUOTE</div>'
+                f'color:{_MID};margin-bottom:0.5rem">PULL QUOTE</div>'
                 f'<div style="font-family:Georgia,serif;font-size:1.05rem;font-style:italic;'
                 f'color:{_INK};line-height:1.65">"{pull}"</div>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
 
-    # ── Player images ───────────────────────────────────────────────────────
-    img_pairs = [(n, _find_player_url(n)) for n in fp_names if _find_player_url(n)]
-    # Always include Messi if hat trick data exists
-    if hat_tricks and not any("messi" in n.lower() for n, _ in img_pairs):
-        img_pairs.insert(0, ("Lionel Messi", _PLAYER_IMG["Lionel Messi"]))
-    img_pairs = img_pairs[:4]
+    # ── AI-generated player images (Pollinations.ai) ──────────────────────────
+    ai_images: list[tuple[str, str]] = []  # (url, caption)
+    seen: set[str] = set()
 
-    if img_pairs:
+    # Hat trick team always first
+    if hat_tricks:
+        ht = hat_tricks[0]
+        ht_team = ht.get("team","")
+        ht_opp  = ht.get("opponent","")
+        prompt  = f"{ht_team} footballer celebrating hat trick goal stadium crowd jubilant photorealistic"
+        ai_images.append((_ai_img_url(prompt), f"Hat Trick Hero · {ht_team} vs {ht_opp}"))
+        seen.add(ht_team.lower())
+
+    # LLM-suggested image subjects
+    for subj in img_subjs:
+        name = subj.get("name","")
+        team = subj.get("team","")
+        ctx  = subj.get("context","")
+        key  = name.lower()
+        if name and key not in seen:
+            ai_images.append((_player_art_url(name, team, ctx), f"{name} · {team}"))
+            seen.add(key)
+
+    ai_images = ai_images[:3]
+
+    if ai_images:
         _hr()
         _section_banner("PLAYERS IN THE NEWS")
-        img_cols = st.columns(len(img_pairs))
-        for col, (name, url) in zip(img_cols, img_pairs):
+        img_cols = st.columns(len(ai_images))
+        for col, (url, caption) in zip(img_cols, ai_images):
             with col:
-                img_bytes = _fetch_img(url)
-                if img_bytes:
-                    st.image(img_bytes, use_container_width=True)
-                    st.caption(f"**{name}**")
-                else:
-                    pteam = spotlight.get("team","") if name == spotlight.get("name","") else ""
-                    fu = _flag_url(pteam, 80)
-                    if fu:
-                        st.image(fu, width=80)
-                    st.caption(f"**{name}**")
+                st.image(url, use_container_width=True)
+                st.markdown(
+                    f'<div style="font-size:0.72rem;color:{_MID};text-align:center;'
+                    f'font-family:Georgia,serif;margin-top:0.2rem;font-style:italic">{caption}</div>',
+                    unsafe_allow_html=True,
+                )
 
-    # ── Story sections ──────────────────────────────────────────────────────
+    # ── Story sections (skip themes that have dedicated graphic sections) ───────
     _hr()
-    for i, sec in enumerate(sections):
+    rendered = 0
+    for sec in sections:
         title   = sec.get("title","")
         content = sec.get("content","")
-        if not content:
+        if not content or _is_graphic_theme(title):
             continue
-        if i > 0:
+        if rendered > 0:
             _hr()
+        rendered += 1
         _section_banner(title)
         st.markdown(
             f'<p style="font-family:Georgia,serif;font-size:0.93rem;'
@@ -751,19 +758,12 @@ def _render_newspaper(story: dict, meta: dict, context: dict, best_days: list) -
         pteam    = spotlight.get("team","")
         pachieve = spotlight.get("achievement","")
         pnarr    = spotlight.get("narrative","")
-        pimg_url = _find_player_url(pname)
-
         _hr()
         _section_banner("PLAYER SPOTLIGHT")
         pcol_img, pcol_text = st.columns([1,2])
         with pcol_img:
-            img_bytes = _fetch_img(pimg_url) if pimg_url else None
-            if img_bytes:
-                st.image(img_bytes, use_container_width=True)
-            else:
-                fu = _flag_url(pteam, 80)
-                if fu:
-                    st.image(fu, width=80)
+            spotlight_url = _player_art_url(pname, pteam, pachieve)
+            st.image(spotlight_url, use_container_width=True)
         with pcol_text:
             st.markdown(
                 f'<div style="font-family:Georgia,serif">'
@@ -824,12 +824,12 @@ def _render_newspaper(story: dict, meta: dict, context: dict, best_days: list) -
                     f'<div style="margin-bottom:0.55rem">'
                     f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">'
                     f'<span style="font-size:0.82rem;color:{_INK};font-weight:600">{tf}{t["team"]}'
-                    f'<span style="font-size:0.6rem;color:{_LIGHT};margin-left:4px">{tier_label}</span></span>'
+                    f'<span style="font-size:0.6rem;color:{_MID};margin-left:4px">{tier_label}</span></span>'
                     f'<span style="font-size:0.9rem;font-weight:900;color:{_RED}">{t["goals"]} ⚽</span>'
                     f'</div>'
                     f'<div style="background:{_BORDER}22;border-radius:2px;height:7px">'
                     f'<div style="background:{_RED};width:{pct}%;height:7px;border-radius:2px"></div></div>'
-                    f'<div style="font-size:0.62rem;color:{_LIGHT};margin-top:1px">Owners: {ow}</div>'
+                    f'<div style="font-size:0.62rem;color:{_MID};margin-top:1px">Owners: {ow}</div>'
                     f'</div>'
                 )
             st.markdown(
@@ -870,9 +870,9 @@ def _render_newspaper(story: dict, meta: dict, context: dict, best_days: list) -
         st.markdown(
             f'<table style="width:100%;border-collapse:collapse;font-family:Georgia,serif">'
             f'<thead><tr>'
-            f'<th style="color:{_LIGHT};font-size:0.6rem;padding:0.2rem 0.3rem;text-align:center">#</th>'
-            f'<th style="color:{_LIGHT};font-size:0.6rem;padding:0.2rem 0.3rem;text-align:left">PLAYER</th>'
-            f'<th style="color:{_LIGHT};font-size:0.6rem;padding:0.2rem 0.3rem;text-align:right">PTS</th>'
+            f'<th style="color:{_MID};font-size:0.6rem;padding:0.2rem 0.3rem;text-align:center">#</th>'
+            f'<th style="color:{_MID};font-size:0.6rem;padding:0.2rem 0.3rem;text-align:left">PLAYER</th>'
+            f'<th style="color:{_MID};font-size:0.6rem;padding:0.2rem 0.3rem;text-align:right">PTS</th>'
             f'</tr></thead><tbody>{rows_html}</tbody></table>',
             unsafe_allow_html=True,
         )
@@ -894,7 +894,7 @@ def _render_newspaper(story: dict, meta: dict, context: dict, best_days: list) -
     # ── Footer ──────────────────────────────────────────────────────────────
     st.markdown(
         f'<div style="font-family:Georgia,serif;text-align:center;padding:0.6rem 0 0.2rem;'
-        f'border-top:1px solid {_BORDER}44;font-size:0.62rem;color:{_LIGHT};margin-top:0.8rem">'
+        f'border-top:1px solid {_BORDER}44;font-size:0.62rem;color:{_MID};margin-top:0.8rem">'
         f'Generated {meta.get("generated_at","?")} · '
         f'{meta.get("matches_covered","?")} matches covered · '
         f'The Sweepstake Gazette © 2026</div>',
