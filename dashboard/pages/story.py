@@ -427,14 +427,28 @@ RULES:
 - Tone: passionate tabloid football journalist
 """
 
-    resp = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[{"role":"system","content":system},{"role":"user","content":user}],
-        max_tokens=2500,
-        temperature=0.75,
-        response_format={"type":"json_object"},
-    )
-    raw = resp.choices[0].message.content
+    _models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it"]
+    raw = None
+    last_err = None
+    for _model in _models:
+        try:
+            resp = client.chat.completions.create(
+                model=_model,
+                messages=[{"role":"system","content":system},{"role":"user","content":user}],
+                max_tokens=2500,
+                temperature=0.75,
+                response_format={"type":"json_object"},
+            )
+            raw = resp.choices[0].message.content
+            break
+        except Exception as _e:
+            last_err = _e
+            # Only fall through on rate-limit errors
+            if "429" in str(_e) or "rate_limit" in str(_e).lower():
+                continue
+            raise
+    if raw is None:
+        raise last_err
     try:
         return json.loads(raw)
     except Exception:
