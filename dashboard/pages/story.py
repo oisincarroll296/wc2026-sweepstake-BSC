@@ -308,9 +308,30 @@ def _build_story_context(date_from: date | None = None, date_to: date | None = N
     n_players  = len(standings)
     unpaid_top = [s for s in standings if not s["paid"] and s["rank"] <= max(1, n_players//2)]
 
+    # Upcoming fixtures that involve at least one owned team
+    played_nums = set(all_played["match_number"].dropna().astype(int).tolist())
+    upcoming_df = (
+        fixtures[~fixtures["match_number"].isin(played_nums)]
+        .sort_values("match_number")
+    )
+    upcoming_owned = upcoming_df[
+        upcoming_df["home_team"].isin(ownership) | upcoming_df["away_team"].isin(ownership)
+    ].head(10)
+    upcoming_fixtures = [
+        {
+            "match":       int(r["match_number"]),
+            "date":        str(r.get("match_date","")),
+            "home":        str(r.get("home_team","")),
+            "away":        str(r.get("away_team","")),
+            "home_owners": ownership.get(str(r.get("home_team","")), []),
+            "away_owners": ownership.get(str(r.get("away_team","")), []),
+        }
+        for _, r in upcoming_owned.iterrows()
+    ]
+
     return {
         "sweepstake_info": (
-            "14 friends, each owning 8 teams (2 per tier across 4 FIFA tiers). "
+            f"{n_players} friends, each owning teams across 4 FIFA tiers. "
             "Points: Goal 1pt, Clean sheet 2pt, Win 3pt, "
             "Upset vs 1 tier higher +15pt / 2 tiers +30pt / 3 tiers +50pt, "
             "Hat trick 10pt, Shirt removal 25pt, GK goal 75pt, Red card -5pt. "
@@ -330,6 +351,7 @@ def _build_story_context(date_from: date | None = None, date_to: date | None = N
         "special_events":       special_events,
         "top_scoring_teams":    top_teams,
         "featured_teams":       sorted(featured_teams),
+        "upcoming_owned_fixtures": upcoming_fixtures,
     }
 
 
@@ -346,11 +368,14 @@ def _generate_story(context: dict, api_key: str, topic: str = "", suggestions: s
         extras.append(f"SPECIFIC POINTS TO INCLUDE:\n{suggestions.strip()}")
     extras_block = ("\n\n" + "\n\n".join(extras)) if extras else ""
 
+    n_players = len(context.get("current_standings", []))
     system = (
-        "You are a sharp tabloid football journalist writing the front page of a private "
-        "World Cup 2026 sweepstake newspaper. Your audience is 14 friends. "
+        f"You are a sharp tabloid football journalist writing the front page of a private "
+        f"World Cup 2026 sweepstake newspaper. Your audience is {n_players} friends. "
         "You write like a passionate sports tabloid — vivid, dramatic, specific, occasionally cheeky. "
-        "Always connect on-pitch events to their sweepstake consequences (who owns the team, points earned)."
+        "Always connect on-pitch events to their sweepstake consequences (who owns the team, points earned). "
+        "CRITICAL: Never invent or hallucinate match results, fixtures, or scorelines. "
+        "Only reference facts present in the DATA block."
     )
 
     user = f"""Write a complete newspaper edition covering: {context['period']}.
@@ -386,7 +411,7 @@ OUTPUT — respond ONLY with a single valid JSON object, no markdown fences:
   ],
   "sweepstake_digest": "4-5 sentences: who leads, who is climbing, name unpaid players doing well and suggest they pay up",
   "pull_quote": "One vivid standalone sentence for a big pull quote",
-  "looking_ahead": "2-3 sentences on upcoming fixtures or moments to watch"
+  "looking_ahead": "2-3 sentences. ONLY reference fixtures listed in upcoming_owned_fixtures. Name the sweepstake owners who have skin in the game. If upcoming_owned_fixtures is empty, comment on a standings battle instead. NEVER mention a fixture not in the data."
 }}
 
 RULES:
@@ -394,6 +419,8 @@ RULES:
 - DO NOT write sections about upsets or special events (hat tricks, red cards, shirt removals) — those are shown as graphics separately
 - Name sweepstake players when their teams do something notable
 - Use real scorelines only — never invent facts
+- NEVER reference a fixture, team, or scoreline not present in the DATA block
+- looking_ahead MUST only reference matches in upcoming_owned_fixtures — do not invent fixtures
 - No repeated information across sections
 - player_spotlight must be the single most notable player from the data
 - image_subjects: list 2-3 subjects to generate AI artwork for (player names or team moments)
