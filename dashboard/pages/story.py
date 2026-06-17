@@ -978,8 +978,12 @@ def _render_newspaper(story: dict, meta: dict, context: dict, best_days: list) -
 
 page_header("Tournament News", "AI-generated newspaper from live match data")
 
-_api_key  = st.secrets.get("GROQ_API_KEY", "")
-_admin_pw = st.secrets.get("ADMIN_PASSWORD", "wc2026admin")
+try:
+    _api_key  = st.secrets.get("GROQ_API_KEY", "")
+    _admin_pw = st.secrets.get("ADMIN_PASSWORD", "wc2026admin")
+except Exception:
+    _api_key  = ""
+    _admin_pw = "wc2026admin"
 _cache    = _load_cache()
 _is_admin = st.session_state.get("_story_admin", False)
 
