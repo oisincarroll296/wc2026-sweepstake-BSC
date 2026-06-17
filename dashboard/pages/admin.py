@@ -752,17 +752,45 @@ with tabs[4]:
                                       else "away" if pen_winner_sel == away_team
                                       else "")
 
+                    st.divider()
+                    st.markdown("**Special Events**")
+                    se1, se2 = st.columns(2)
+                    with se1:
+                        st.caption(f"{home_team}")
+                        h_ht = st.number_input("Hat Tricks 🎩",  0, 5,  _pi("home_hat_tricks"),      key="h_ht", help="+10 pts each")
+                        h_rc = st.number_input("Red Cards 🟥",   0, 10, _pi("home_red_cards"),       key="h_rc", help="-5 pts each")
+                        h_so = st.number_input("Shirt Off 👕",   0, 5,  _pi("home_shirt_off"),       key="h_so", help="+25 pts each")
+                        h_gk = st.number_input("GK Goal 🧤",     0, 3,  _pi("home_gk_goals"),        key="h_gk", help="+75 pts each")
+                        h_fe = st.checkbox("First Eliminated ☠️", bool(_pi("home_first_eliminated")), key="h_fe", help="+35 pts to owners")
+                    with se2:
+                        st.caption(f"{away_team}")
+                        a_ht = st.number_input("Hat Tricks 🎩",  0, 5,  _pi("away_hat_tricks"),      key="a_ht", help="+10 pts each")
+                        a_rc = st.number_input("Red Cards 🟥",   0, 10, _pi("away_red_cards"),       key="a_rc", help="-5 pts each")
+                        a_so = st.number_input("Shirt Off 👕",   0, 5,  _pi("away_shirt_off"),       key="a_so", help="+25 pts each")
+                        a_gk = st.number_input("GK Goal 🧤",     0, 3,  _pi("away_gk_goals"),        key="a_gk", help="+75 pts each")
+                        a_fe = st.checkbox("First Eliminated ☠️", bool(_pi("away_first_eliminated")), key="a_fe", help="+35 pts to owners")
+
                     submitted_m = st.form_submit_button("Save Result", type="primary")
                     if submitted_m:
                         try:
                             save_match_result_and_recalculate(
-                                match_number  = sel_mn,
-                                home_goals    = h_goals,
-                                away_goals    = a_goals,
-                                extra_time    = et_played and not is_group,
-                                penalty_winner= pen_winner,
-                                comeback_home = cb_home,
-                                comeback_away = cb_away,
+                                match_number          = sel_mn,
+                                home_goals            = h_goals,
+                                away_goals            = a_goals,
+                                extra_time            = et_played and not is_group,
+                                penalty_winner        = pen_winner,
+                                comeback_home         = cb_home,
+                                comeback_away         = cb_away,
+                                home_hat_tricks       = h_ht,
+                                away_hat_tricks       = a_ht,
+                                home_red_cards        = h_rc,
+                                away_red_cards        = a_rc,
+                                home_shirt_off        = h_so,
+                                away_shirt_off        = a_so,
+                                home_gk_goals         = h_gk,
+                                away_gk_goals         = a_gk,
+                                home_first_eliminated = h_fe,
+                                away_first_eliminated = a_fe,
                             )
                             _sync("match_results.csv", "match_stats.csv")
                             st.success(
