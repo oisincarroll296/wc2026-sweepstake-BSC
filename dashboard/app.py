@@ -35,6 +35,7 @@ if _css.exists():
 pages = [
     st.Page("pages/home.py",               title="Home",               icon="🏠", default=True),
     st.Page("pages/leaderboard.py",        title="Leaderboard",        icon="🏆"),
+    st.Page("pages/story.py",             title="Tournament News",    icon="📰"),
     st.Page("pages/player_portfolios.py",  title="My Portfolio",       icon="👤"),
     st.Page("pages/teams.py",              title="Teams",              icon="⚽"),
     st.Page("pages/bracket.py",            title="Bracket",            icon="🏟️"),
