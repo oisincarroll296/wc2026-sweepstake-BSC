@@ -75,18 +75,17 @@ BREAKDOWN_COLORS = {
 
 
 _BREAKDOWN_GROUPS = [
-    ("Goals",    ["GoalsPoints"],                                              "#3B82F6"),
-    ("CS",       ["CleanSheetPoints"],                                         "#06B6D4"),
-    ("Wins",     ["WinPoints"],                                                "#10B981"),
-    ("Pen/CB",   ["WinBonusPoints"],                                           "#34D399"),
-    ("H-Trick",  ["HatTrickPoints"],                                           "#F59E0B"),
-    ("Upsets",   ["UpsetPoints"],                                              "#EF4444"),
-    ("Progress", ["ProgressionPoints"],                                        "#8B5CF6"),
-    ("Captain",  ["CaptainBonus"],                                             "#D4A017"),
-    ("Insure",   ["InsuranceBonus"],                                           "#15803D"),
-    ("Special",  ["ShirtPoints", "GKGoalPoints", "FirstElimPoints"],           "#EC4899"),
-    ("RedCards", ["RedCardPoints"],                                            "#991B1B"),
-    ("Preds",    ["PredictionBonus"],                                          "#B91C1C"),
+    ("Goals",    ["GoalsPoints"],                                              "#3B82F6",  "1pt ea"),
+    ("CS",       ["CleanSheetPoints"],                                         "#06B6D4",  "2pt ea"),
+    ("Wins",     ["WinPoints"],                                                "#10B981",  "3pt ea"),
+    ("Pen/CB",   ["WinBonusPoints"],                                           "#34D399",  "3pt ea"),
+    ("H-Trick",  ["HatTrickPoints"],                                           "#F59E0B",  "10pt ea"),
+    ("Upsets",   ["UpsetPoints"],                                              "#EF4444",  "15/30/50"),
+    ("Progress", ["ProgressionPoints"],                                        "#8B5CF6",  "by tier"),
+    ("Captain",  ["CaptainBonus"],                                             "#D4A017",  "×0.5"),
+    ("Special",  ["ShirtPoints", "GKGoalPoints", "FirstElimPoints"],           "#EC4899",  "25/75/35"),
+    ("RedCards", ["RedCardPoints"],                                            "#991B1B",  "-5pt ea"),
+    ("Preds",    ["PredictionBonus"],                                          "#B91C1C",  "fixed"),
 ]
 
 
@@ -121,13 +120,12 @@ def _compute_breakdown(lb: pd.DataFrame) -> dict[str, dict]:
     for _, row in lb.iterrows():
         player = row["Player"]
         teams  = list(asn.get(player, []))
-        bd: dict[str, float] = {k: 0.0 for k in ["goals","cs","wins","pencb","hattrick","upsets","special","redcards"]}
+        bd: dict[str, float] = {k: 0.0 for k in ["goals","cs","wins","pencb","hattrick","upsets","special","redcards","captain","preds","progress"]}
         for t in teams:
             for k, v in team_bd.get(t, {}).items():
                 bd[k] += v
-        # Pull complex columns (captain, insurance, predictions, progression) from lb itself
+        # Pull complex columns (captain, predictions, progression) from lb itself
         bd["captain"]    = float(row.get("CaptainBonus", 0) or 0)
-        bd["insurance"]  = float(row.get("InsuranceBonus", 0) or 0)
         bd["preds"]      = float(row.get("PredictionBonus", 0) or 0)
         bd["progress"]   = float(row.get("ProgressionPoints", 0) or 0)
         player_bd[player] = bd
@@ -144,7 +142,6 @@ _BD_KEY = {
     "Upsets":   "upsets",
     "Progress": "progress",
     "Captain":  "captain",
-    "Insure":   "insurance",
     "Special":  "special",
     "RedCards": "redcards",
     "Preds":    "preds",
@@ -159,10 +156,14 @@ def _breakdown_table(lb: pd.DataFrame) -> None:
     player_bd = _compute_breakdown(lb)
 
     th = "color:#9CA3AF;font-size:0.62rem;font-weight:600;padding:0.28rem 0.5rem;white-space:nowrap;text-align:center"
+    tr = "color:#4B5563;font-size:0.58rem;font-weight:400;padding:0.1rem 0.5rem;white-space:nowrap;text-align:center"
     header = f'<th style="{th};text-align:left">Player</th>'
-    for label, _, color in _BREAKDOWN_GROUPS:
+    rate_row = f'<th style="{tr};text-align:left"></th>'
+    for label, _, color, rate in _BREAKDOWN_GROUPS:
         header += f'<th style="{th};border-top:2px solid {color}">{label}</th>'
+        rate_row += f'<th style="{tr};color:{color}55">{rate}</th>'
     header += f'<th style="{th};text-align:right">Total</th>'
+    rate_row += '<th></th>'
 
     rows_html = ""
     for _, row in lb.iterrows():
@@ -174,9 +175,9 @@ def _breakdown_table(lb: pd.DataFrame) -> None:
         td     = "padding:0.26rem 0.5rem;font-size:0.8rem;text-align:center;"
         bd     = player_bd.get(player, {})
 
-        _DECIMAL_COLS = {"Captain", "Insure", "Preds"}
+        _DECIMAL_COLS = {"Captain", "Preds"}
         cells = f'<td style="{td}text-align:left;color:#F1F5F9;font-weight:{fw}">{player}</td>'
-        for label, _, color in _BREAKDOWN_GROUPS:
+        for label, _, color, _rate in _BREAKDOWN_GROUPS:
             val = bd.get(_BD_KEY.get(label, ""), 0.0)
             fmt = ".1f" if label in _DECIMAL_COLS else ".0f"
             if val == 0:
@@ -192,7 +193,10 @@ def _breakdown_table(lb: pd.DataFrame) -> None:
     st.markdown(
         '<div style="overflow-x:auto;margin-bottom:0.5rem">'
         '<table style="width:100%;border-collapse:collapse">'
-        f'<thead><tr style="background:#0D1B2A">{header}</tr></thead>'
+        f'<thead>'
+        f'<tr style="background:#0D1B2A">{header}</tr>'
+        f'<tr style="background:#0D1B2A">{rate_row}</tr>'
+        f'</thead>'
         f'<tbody style="background:#131D2A">{rows_html}</tbody>'
         '</table></div>',
         unsafe_allow_html=True,
