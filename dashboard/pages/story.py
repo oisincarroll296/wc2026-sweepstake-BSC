@@ -100,6 +100,12 @@ def _build_best_day_table() -> list[dict]:
         hist = pd.read_csv(_SCORE_HISTORY_PATH, dtype=str)
         if hist.empty or "Date" not in hist.columns:
             return []
+        # Filter to players that belong to THIS competition only
+        if _PLAYERS_PATH.exists():
+            current = set(pd.read_csv(_PLAYERS_PATH, dtype=str)["Player"].dropna().tolist())
+            hist = hist[hist["Player"].isin(current)]
+        if hist.empty:
+            return []
         hist["Date"]   = pd.to_datetime(hist["Date"], errors="coerce")
         hist["Points"] = pd.to_numeric(hist["Points"], errors="coerce").fillna(0)
         hist = hist.sort_values(["Player", "Date"])
