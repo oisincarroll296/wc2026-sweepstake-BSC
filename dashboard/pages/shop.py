@@ -28,6 +28,7 @@ _GRP = "#F59E0B"
 _KO  = "#22D3EE"
 
 COSTS: dict[str, int] = {
+    "BuyIn":          5,
     "PredictionPack": 5,
     "Mulligan":       3,
     "NinthTeam":      3,
