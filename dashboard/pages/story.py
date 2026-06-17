@@ -138,7 +138,7 @@ def _build_story_context(date_from: date | None = None, date_to: date | None = N
 
     try:
         prize_info = get_prize_pool()
-        prize_pool = prize_info.get("total", 0)
+        prize_pool = prize_info.get("current_pot", prize_info.get("total", 0))
     except Exception:
         prize_pool = 0
 
@@ -660,43 +660,54 @@ def _render_newspaper(story: dict, meta: dict, context: dict, best_days: list) -
                 unsafe_allow_html=True,
             )
 
-    # ── AI-generated player images (Pollinations.ai) ──────────────────────────
-    ai_images: list[tuple[str, str]] = []  # (url, caption)
-    seen: set[str] = set()
+    # ── Featured team graphic strip (flags + badges, no external images) ────────
+    # Show hat trick teams, top scorers, and upset winners as graphic cards
+    featured_cards: list[dict] = []
+    seen_teams: set[str] = set()
 
-    # Hat trick team always first
-    if hat_tricks:
-        ht = hat_tricks[0]
-        ht_team = ht.get("team","")
-        ht_opp  = ht.get("opponent","")
-        prompt  = f"{ht_team} footballer celebrating hat trick goal stadium crowd jubilant photorealistic"
-        ai_images.append((_ai_img_url(prompt), f"Hat Trick Hero · {ht_team} vs {ht_opp}"))
-        seen.add(ht_team.lower())
+    for ht in hat_tricks:
+        t = ht.get("team","")
+        if t and t not in seen_teams:
+            featured_cards.append({"team":t,"label":"HAT TRICK ⚽⚽⚽","color":"#8B0000",
+                                   "detail":f"vs {ht.get('opponent','')} ({ht.get('score','')})"})
+            seen_teams.add(t)
 
-    # LLM-suggested image subjects
-    for subj in img_subjs:
-        name = subj.get("name","")
-        team = subj.get("team","")
-        ctx  = subj.get("context","")
-        key  = name.lower()
-        if name and key not in seen:
-            ai_images.append((_player_art_url(name, team, ctx), f"{name} · {team}"))
-            seen.add(key)
+    for u in upsets[:2]:
+        t = u.get("winner","")
+        if t and t not in seen_teams:
+            featured_cards.append({"team":t,"label":f"UPSET +{u['bonus_pts_each_owner']}pts ⚡","color":"#E65100",
+                                   "detail":f"T{u['winner_tier']} beats T{u['loser_tier']} · {u['score']}"})
+            seen_teams.add(t)
 
-    ai_images = ai_images[:3]
+    if top_teams and top_teams[0]["team"] not in seen_teams:
+        t = top_teams[0]
+        featured_cards.append({"team":t["team"],"label":f"TOP SCORERS {t['goals']} ⚽","color":"#166534",
+                               "detail":f"Owners: {', '.join(t.get('owners',[]))}"})
+        seen_teams.add(t["team"])
 
-    if ai_images:
+    featured_cards = featured_cards[:4]
+
+    if featured_cards:
         _hr()
-        _section_banner("PLAYERS IN THE NEWS")
-        img_cols = st.columns(len(ai_images))
-        for col, (url, caption) in zip(img_cols, ai_images):
-            with col:
-                st.image(url, use_container_width=True)
-                st.markdown(
-                    f'<div style="font-size:0.72rem;color:{_MID};text-align:center;'
-                    f'font-family:Georgia,serif;margin-top:0.2rem;font-style:italic">{caption}</div>',
-                    unsafe_allow_html=True,
-                )
+        _section_banner("TEAMS IN THE NEWS")
+        fc_cols = st.columns(len(featured_cards))
+        for col, card in zip(fc_cols, featured_cards):
+            flag_u = _flag_url(card["team"], 80)
+            flag_html = (f'<img src="{flag_u}" style="width:60px;border-radius:4px;'
+                         f'display:block;margin:0 auto 0.5rem">') if flag_u else ""
+            col.markdown(
+                f'<div style="background:white;border-top:3px solid {card["color"]};'
+                f'border:1px solid {_BORDER}22;border-top:3px solid {card["color"]};'
+                f'border-radius:4px;padding:0.75rem 0.5rem;text-align:center;'
+                f'font-family:Georgia,serif">'
+                f'{flag_html}'
+                f'<div style="font-size:0.82rem;font-weight:700;color:{_INK}">{card["team"]}</div>'
+                f'<div style="font-size:0.6rem;font-weight:900;color:{card["color"]};'
+                f'letter-spacing:0.08em;margin:0.25rem 0">{card["label"]}</div>'
+                f'<div style="font-size:0.65rem;color:{_MID}">{card["detail"]}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
 
     # ── Story sections (skip themes that have dedicated graphic sections) ───────
     _hr()
@@ -762,8 +773,15 @@ def _render_newspaper(story: dict, meta: dict, context: dict, best_days: list) -
         _section_banner("PLAYER SPOTLIGHT")
         pcol_img, pcol_text = st.columns([1,2])
         with pcol_img:
-            spotlight_url = _player_art_url(pname, pteam, pachieve)
-            st.image(spotlight_url, use_container_width=True)
+            flag_u = _flag_url(pteam, 80)
+            st.markdown(
+                f'<div style="background:white;border:2px solid {_BORDER};border-radius:6px;'
+                f'padding:1.2rem 0.8rem;text-align:center;font-family:Georgia,serif">'
+                + (f'<img src="{flag_u}" style="width:70px;border-radius:4px;margin-bottom:0.6rem">' if flag_u else "")
+                + f'<div style="font-size:0.65rem;font-weight:900;letter-spacing:0.1em;color:{_RED}">SPOTLIGHT</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
         with pcol_text:
             st.markdown(
                 f'<div style="font-family:Georgia,serif">'
