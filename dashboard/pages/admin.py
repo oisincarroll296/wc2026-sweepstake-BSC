@@ -315,6 +315,7 @@ with tabs[1]:
                 cost = _PRICES.get(add_type, 0)
                 st.success(f"✓ {add_type} added for {add_player}  (€{int(cost)})")
                 _refresh()
+                st.rerun()
             except Exception as exc:
                 st.error(f"Error: {exc}")
 
