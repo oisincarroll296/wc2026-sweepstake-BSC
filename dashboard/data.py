@@ -360,10 +360,7 @@ def _snapshot_score_history() -> None:
         participants = statuses["Player"].tolist() if not statuses.empty else []
         if not participants:
             return
-        assignments_raw = load_allocation()
-        assignments: dict[str, list[str]] = {}
-        for _, row in assignments_raw.iterrows():
-            assignments.setdefault(str(row["Player"]), []).append(str(row["Team"]))
+        assignments = load_allocation().assignments
 
         tr_path = _ROOT / "data" / "tournament_results.json"
         tr = json.loads(tr_path.read_text()) if tr_path.exists() else {}
