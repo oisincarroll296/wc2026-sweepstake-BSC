@@ -376,7 +376,7 @@ with tabs[1]:
     st.caption(
         "Execute a full roster swap between two players — all teams are exchanged. "
         "The initiator (the player who chose the swap) pays €8. "
-        "Each player's set of teams can only be swapped once."
+        "Each set of teams can only be swapped once — first come, first served. Send Oisin a message to lock in."
     )
 
     from src.competition import (

@@ -156,7 +156,7 @@ with tab_purchases:
             '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.4rem 0 0">'
             'Two players exchange their entire roster — all teams swap. '
             'The player who <strong>chose</strong> the swap pays €8. '
-            'Each player\'s set of teams can only be swapped once. '
+            'Each set of teams can only be swapped once — first come, first served. Send Oisin a message to lock in. '
             'Your Ninth Team and Resurrection follow your updated roster.</p></div>',
             unsafe_allow_html=True,
         )
