@@ -52,6 +52,13 @@ tab_groups, tab_standings, tab_fixtures, tab_results, tab_ownership = st.tabs([
 # TAB 1 — GROUPS
 # ═══════════════════════════════════════════════════════════════════
 with tab_groups:
+    # Build set of teams eliminated in the group stage
+    eliminated_gs: set[str] = set()
+    if not stats_df.empty and "RoundReached" in stats_df.columns:
+        eliminated_gs = set(
+            stats_df[stats_df["RoundReached"] == "GroupStage"]["Team"].tolist()
+        )
+
     group_letters = sorted(groups.keys())
     for row_start in range(0, len(group_letters), 3):
         cols = st.columns(3)
@@ -76,7 +83,18 @@ with tab_groups:
                         f'<span style="color:#D4A017;font-size:0.7rem;margin-left:0.3rem">⚽{goals}</span>'
                         if goals > 0 else ""
                     )
+                    elim = team in eliminated_gs
+                    x_overlay = (
+                        '<div style="position:absolute;top:0;left:0;right:0;bottom:0;'
+                        'display:flex;align-items:center;justify-content:flex-end;'
+                        'padding-right:0.4rem;pointer-events:none">'
+                        '<span style="color:#EF4444;font-size:2rem;font-weight:900;'
+                        'line-height:1;opacity:0.85">✕</span></div>'
+                        if elim else ""
+                    )
+                    outer_style = "position:relative;opacity:0.55;" if elim else "position:relative;"
                     st.markdown(
+                        f'<div style="{outer_style}">'
                         f'<div style="border-left:3px solid {color};padding:0.25rem 0.5rem;'
                         f'margin:0.2rem 0;background:#1E2937;border-radius:0 5px 5px 0">'
                         f'<span style="color:{color};font-size:0.65rem;font-weight:700;'
@@ -85,6 +103,8 @@ with tab_groups:
                         f'{goals_html}'
                         f'<div style="color:{owner_col};font-size:0.7rem;margin-top:0.05rem">'
                         f'{owner_str}</div>'
+                        f'</div>'
+                        f'{x_overlay}'
                         f'</div>',
                         unsafe_allow_html=True,
                     )

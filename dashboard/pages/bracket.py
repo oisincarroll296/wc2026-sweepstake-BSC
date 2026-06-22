@@ -62,6 +62,19 @@ def _team_card(team: str, compact: bool = False) -> str:
     )
 
 
+def _elim_wrap(card_html: str) -> str:
+    """Wrap a team card with a red ✕ overlay and dim it to indicate elimination."""
+    return (
+        '<div style="position:relative;opacity:0.55">'
+        f'{card_html}'
+        '<div style="position:absolute;top:0;left:0;right:0;bottom:0;display:flex;'
+        'align-items:center;justify-content:flex-end;padding-right:0.5rem;pointer-events:none">'
+        '<span style="color:#EF4444;font-size:2rem;font-weight:900;line-height:1;opacity:0.9">✕</span>'
+        '</div>'
+        '</div>'
+    )
+
+
 # ── Check for knockout data ────────────────────────────────────────────────────
 _by_round: dict[str, list[str]] = {r: [] for r in KO_ROUNDS}
 if not match_stats.empty:
@@ -107,21 +120,14 @@ with tab_group:
                         team_rows = sorted(groups[g], key=lambda r: int(r.get("Tier", 4)))
                         for r in team_rows:
                             team = str(r["Team"])
-                            # Show RoundReached badge if available
                             rnd = ""
                             if not match_stats.empty:
                                 ms_row = match_stats[match_stats["Team"] == team]
                                 if not ms_row.empty:
                                     rnd = str(ms_row.iloc[0].get("RoundReached", "") or "").strip()
-                            elim = rnd == "GroupStage"
-                            opacity = "opacity:0.45;" if elim else ""
                             card = _team_card(team, compact=True)
-                            # Wrap with opacity for eliminated teams
-                            if elim:
-                                card = card.replace(
-                                    'margin-bottom:0.3rem"',
-                                    f'margin-bottom:0.3rem;{opacity}"',
-                                )
+                            if rnd == "GroupStage":
+                                card = _elim_wrap(card)
                             st.markdown(card, unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -141,5 +147,8 @@ with tab_ko:
             cols   = st.columns(n_cols) if n_cols > 1 else [st.container()]
             for i, team in enumerate(sorted(teams_in_round)):
                 with cols[i % n_cols]:
-                    st.markdown(_team_card(team), unsafe_allow_html=True)
+                    card = _team_card(team)
+                    if rnd != "Winner":
+                        card = _elim_wrap(card)
+                    st.markdown(card, unsafe_allow_html=True)
             st.markdown("")

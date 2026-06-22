@@ -603,6 +603,83 @@ with tabs[4]:
     )
     from src.scoring_engine import load_match_stats
 
+    # ── Group Stage Elimination ────────────────────────────────────────────────
+    with st.expander("🚫 Mark Group Stage Eliminations", expanded=True):
+        st.caption(
+            "Select teams that have been eliminated from the group stage. "
+            "Sets RoundReached = 'GroupStage' without touching any other stats."
+        )
+        _gs_ms = load_match_stats()
+        _gs_teams_df = get_teams()
+        _gs_all_teams = sorted(_gs_teams_df["Team"].tolist()) if not _gs_teams_df.empty else []
+
+        _gs_round_map: dict[str, str] = {}
+        if not _gs_ms.empty and "RoundReached" in _gs_ms.columns:
+            for _, _r in _gs_ms.iterrows():
+                _gs_round_map[str(_r["Team"])] = str(_r.get("RoundReached", "") or "").strip()
+
+        _already_elim = [t for t in _gs_all_teams if _gs_round_map.get(t) == "GroupStage"]
+        _active_teams = [t for t in _gs_all_teams if _gs_round_map.get(t, "") == ""]
+
+        if _already_elim:
+            st.markdown(
+                "**Already eliminated:** " +
+                "  ".join(f'<span style="color:#EF4444">{t}</span>' for t in _already_elim),
+                unsafe_allow_html=True,
+            )
+
+        _to_elim = st.multiselect(
+            "Select teams to mark as eliminated (group stage)",
+            options=_active_teams,
+            key="gs_elim_multi",
+        )
+
+        _col_elim1, _col_elim2 = st.columns([1, 3])
+        with _col_elim1:
+            if st.button("Mark Eliminated", type="primary", disabled=not _to_elim):
+                try:
+                    _gs_ms2 = load_match_stats()
+                    for _t in _to_elim:
+                        _mask = _gs_ms2["Team"] == _t
+                        if _mask.any():
+                            _gs_ms2.loc[_mask, "RoundReached"] = "GroupStage"
+                        else:
+                            _new_row = {"Team": _t, "RoundReached": "GroupStage"}
+                            _gs_ms2 = pd.concat([_gs_ms2, pd.DataFrame([_new_row])], ignore_index=True)
+                    _gs_ms2.to_csv(DATA / "match_stats.csv", index=False)
+                    _push(DATA / "match_stats.csv", "data/match_stats.csv",
+                          "Eliminations: " + ", ".join(_to_elim))
+                    _refresh()
+                    st.success(f"Marked {len(_to_elim)} team(s) as eliminated.")
+                    st.rerun()
+                except Exception as _ge:
+                    st.error(f"Error: {_ge}")
+
+        with _col_elim2:
+            if _already_elim:
+                _undo = st.selectbox(
+                    "Undo elimination",
+                    ["— select —"] + _already_elim,
+                    key="gs_elim_undo",
+                )
+                if _undo != "— select —":
+                    if st.button(f"Restore {_undo}", key="gs_elim_undo_btn"):
+                        try:
+                            _gs_ms3 = load_match_stats()
+                            _mask3 = _gs_ms3["Team"] == _undo
+                            if _mask3.any():
+                                _gs_ms3.loc[_mask3, "RoundReached"] = ""
+                            _gs_ms3.to_csv(DATA / "match_stats.csv", index=False)
+                            _push(DATA / "match_stats.csv", "data/match_stats.csv",
+                                  f"Restore: {_undo}")
+                            _refresh()
+                            st.success(f"Restored {_undo}.")
+                            st.rerun()
+                        except Exception as _ue:
+                            st.error(f"Error: {_ue}")
+
+    st.divider()
+
     result_mode = st.radio(
         "Entry method",
         ["By Match (recommended)", "Advanced / Special Stats"],

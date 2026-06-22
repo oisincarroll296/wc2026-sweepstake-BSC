@@ -47,10 +47,10 @@ DARK_HORSE_BONUSES: dict[str, int] = {
 
 # Progression bonuses per tier — cumulative for each knockout round cleared
 PROGRESSION_BONUSES: dict[int, dict[str, int]] = {
-    1: {"R32": 1,  "R16": 2,  "QF": 4,  "SF": 8,  "Final": 12, "Winner": 20},
-    2: {"R32": 2,  "R16": 4,  "QF": 8,  "SF": 12, "Final": 18, "Winner": 28},
-    3: {"R32": 5,  "R16": 8,  "QF": 15, "SF": 20, "Final": 32, "Winner": 46},
-    4: {"R32": 8,  "R16": 12, "QF": 25, "SF": 30, "Final": 45, "Winner": 65},
+    1: {"R32": 2,  "R16": 4,  "QF": 8,  "SF": 16, "Final": 24, "Winner": 30},
+    2: {"R32": 4,  "R16": 8,  "QF": 16, "SF": 24, "Final": 36, "Winner": 42},
+    3: {"R32": 10, "R16": 16, "QF": 30, "SF": 40, "Final": 64, "Winner": 69},
+    4: {"R32": 16, "R16": 24, "QF": 50, "SF": 60, "Final": 90, "Winner": 98},
 }
 
 ROUND_ORDER: list[str] = ["GroupStage", "R32", "R16", "QF", "SF", "Final", "Winner"]
