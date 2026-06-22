@@ -20,6 +20,7 @@ _deadline_key: dict[str, str] = {
     "NinthTeam":     "ninth_team_draw",
     "Resurrection":  "resurrection_window_close",
     "Insurance":     "group_stage_closes",
+    "TeamSwap":      "team_swap_deadline",
 }
 _deadlines: dict[str, datetime] = {}
 _dl_path = _ROOT / "data" / "deadlines.json"
@@ -53,6 +54,7 @@ _price_chips = "".join(
         ("Buy In", "Buy In", 5), ("Prediction Pack", "Prediction Pack", 5),
         ("Insurance", "Insurance", 2), ("Mulligan", "Mulligan", 3),
         ("Ninth Team", "Ninth Team", 3), ("Resurrection", "Resurrection", 5),
+        ("Team Swap", "Team Swap", 8),
     ]
 )
 st.markdown(
@@ -94,6 +96,7 @@ PTYPES = [
     ("Mulligan",      "Mulligan",     3),
     ("NinthTeam",     "Ninth",        3),
     ("Resurrection",  "Resurrection", 5),
+    ("TeamSwap",      "Swap",         8),
 ]
 COSTS = {pt: cost for pt, _, cost in PTYPES}
 

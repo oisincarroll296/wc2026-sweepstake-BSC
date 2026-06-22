@@ -35,7 +35,7 @@ AUDIT_LOG_PATH     = DATA_DIR / "audit_log.csv"
 PLAYER_STATUSES    = frozenset({"UNPAID", "PAID"})
 PURCHASE_TYPES     = frozenset({
     "BuyIn", "PredictionPack", "Mulligan", "CompleteRedraw",
-    "NinthTeam", "Resurrection", "Insurance",
+    "NinthTeam", "Resurrection", "Insurance", "TeamSwap",
 })
 PURCHASE_STATUSES  = frozenset({"PENDING", "PROCESSED", "CANCELLED"})
 EVENT_TYPES        = frozenset({
@@ -52,8 +52,11 @@ PRICES: dict[str, float] = {
     "CompleteRedraw": 6.0,
     "NinthTeam":      3.0,
     "Resurrection":   5.0,
-    "Insurance":    2.0,
+    "Insurance":      2.0,
+    "TeamSwap":       8.0,
 }
+
+SWAPS_PATH = DATA_DIR / "swaps.csv"
 
 PRIZE_SHARES = (0.50, 0.30, 0.20)   # 1st, 2nd, 3rd
 
@@ -144,6 +147,107 @@ def load_audit_log(path: Optional[Path | str] = None) -> pd.DataFrame:
     if not p.exists():
         return pd.DataFrame(columns=["Timestamp", "Event", "Player", "Action", "Result"])
     return pd.read_csv(p, dtype=str).fillna("")
+
+
+def load_swaps(path: Optional[Path | str] = None) -> pd.DataFrame:
+    p = Path(path) if path else SWAPS_PATH
+    _COLS = ["Initiator", "Counterpart", "Timestamp"]
+    if not p.exists():
+        return pd.DataFrame(columns=_COLS)
+    df = pd.read_csv(p, dtype=str).fillna("")
+    for col in _COLS:
+        if col not in df.columns:
+            df[col] = ""
+    return df[_COLS].copy()
+
+
+def get_swapped_players(swaps: pd.DataFrame) -> set[str]:
+    """Return the set of players who have already been part of a full-roster swap."""
+    if swaps.empty:
+        return set()
+    players: set[str] = set()
+    for col in ("Initiator", "Counterpart"):
+        if col in swaps.columns:
+            players |= set(swaps[col].dropna().str.strip())
+    players.discard("")
+    return players
+
+
+def execute_team_swap(
+    initiator: str,
+    counterpart: str,
+    allocation_path: Path,
+    purchases_path: Path,
+    swaps: pd.DataFrame,
+    audit_log: pd.DataFrame,
+    timestamp: Optional[str] = None,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, list[str]]:
+    """Swap ALL teams between two players, modifying allocation.csv in place.
+
+    Returns (updated_purchases, updated_swaps, updated_audit_log, errors).
+    """
+    errors: list[str] = []
+
+    already_swapped = get_swapped_players(swaps)
+    if initiator in already_swapped:
+        errors.append(f"{initiator!r} has already done a swap and cannot swap again")
+    if counterpart in already_swapped:
+        errors.append(f"{counterpart!r} has already done a swap and cannot swap again")
+    if errors:
+        return pd.DataFrame(), swaps, audit_log, errors
+
+    if not allocation_path.exists():
+        return pd.DataFrame(), swaps, audit_log, ["allocation.csv not found"]
+
+    alloc = pd.read_csv(allocation_path, dtype=str).fillna("")
+    mask_i = alloc["Player"] == initiator
+    mask_c = alloc["Player"] == counterpart
+    if not mask_i.any():
+        errors.append(f"{initiator!r} has no teams in allocation.csv")
+    if not mask_c.any():
+        errors.append(f"{counterpart!r} has no teams in allocation.csv")
+    if errors:
+        return pd.DataFrame(), swaps, audit_log, errors
+
+    alloc.loc[mask_i, "Player"] = "__TEMP__"
+    alloc.loc[mask_c, "Player"] = initiator
+    alloc.loc[alloc["Player"] == "__TEMP__", "Player"] = counterpart
+    alloc.to_csv(allocation_path, index=False)
+
+    ts = timestamp or _now_iso()
+
+    # Add TeamSwap purchase for initiator (budget tracking)
+    _PCOLS = ["Player", "PurchaseType", "Selection", "Reference", "Timestamp"]
+    purchases = load_purchases(purchases_path)
+    new_purch = pd.DataFrame([{
+        "Player": initiator, "PurchaseType": "TeamSwap",
+        "Selection": counterpart, "Reference": "", "Timestamp": ts,
+    }])
+    purchases = pd.concat([purchases, new_purch], ignore_index=True)
+    for col in _PCOLS:
+        if col not in purchases.columns:
+            purchases[col] = ""
+    purchases = purchases[_PCOLS]
+    purchases.to_csv(purchases_path, index=False)
+
+    new_swap = {"Initiator": initiator, "Counterpart": counterpart, "Timestamp": ts}
+    swaps = pd.concat([swaps, pd.DataFrame([new_swap])], ignore_index=True)
+
+    # Append audit log entry
+    _al_cols = ["Timestamp", "Event", "Player", "Action", "Result"]
+    new_al = pd.DataFrame([{
+        "Timestamp": ts, "Event": "TEAM_SWAP", "Player": initiator,
+        "Action": f"FULL ROSTER SWAP {initiator} ↔ {counterpart}",
+        "Result": "allocation.csv updated",
+    }])
+    audit_log = pd.concat([audit_log, new_al], ignore_index=True)
+    for col in _al_cols:
+        if col not in audit_log.columns:
+            audit_log[col] = ""
+    audit_log = audit_log[_al_cols]
+
+    return purchases, swaps, audit_log, []
+
 
 # ---------------------------------------------------------------------------
 # Player status
