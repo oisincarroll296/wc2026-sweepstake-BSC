@@ -199,9 +199,11 @@ _budgets_df = get_player_budgets()
 _budget_map: dict[str, dict] = {}
 if not _budgets_df.empty:
     for _, _br in _budgets_df.iterrows():
+        _b = pd.to_numeric(_br.get("Budget", 0), errors="coerce")
+        _a = pd.to_numeric(_br.get("Available", 0), errors="coerce")
         _budget_map[str(_br["Player"])] = {
-            "budget": float(pd.to_numeric(_br.get("Budget", 0), errors="coerce") or 0),
-            "available": float(pd.to_numeric(_br.get("Available", 0), errors="coerce") or 0),
+            "budget":    0.0 if pd.isna(_b) else float(_b),
+            "available": 0.0 if pd.isna(_a) else float(_a),
         }
 
 _rr_home: dict[str, str] = {}
