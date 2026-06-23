@@ -14,6 +14,7 @@ from dashboard.data import (
     get_paid_count, get_pack_count, get_audit_log, get_events,
     get_assignments, get_participants, get_deadlines, countdown, DEADLINE_LABELS,
     get_fixtures, get_match_results, get_match_stats, get_tier_map, get_purchases,
+    get_player_budgets,
 )
 from dashboard.components.ui import page_header, empty_state
 
@@ -194,6 +195,14 @@ _TC = {1: "#105AAC", 2: "#15803D", 3: "#A16207", 4: "#B91C1C"}
 _ms_home    = get_match_stats()
 _tmap_home  = get_tier_map()
 _purch_home = get_purchases()
+_budgets_df = get_player_budgets()
+_budget_map: dict[str, dict] = {}
+if not _budgets_df.empty:
+    for _, _br in _budgets_df.iterrows():
+        _budget_map[str(_br["Player"])] = {
+            "budget": float(pd.to_numeric(_br.get("Budget", 0), errors="coerce") or 0),
+            "available": float(pd.to_numeric(_br.get("Available", 0), errors="coerce") or 0),
+        }
 
 _rr_home: dict[str, str] = {}
 if not _ms_home.empty:
@@ -225,6 +234,7 @@ else:
         _teams  = _assignments.get(_player, [])
         _ph     = _pp_home.get(_player, set())
         _spent  = sum(_PRICES_LOOKUP.get(p, 0) for p in _ph)
+        _bdata  = _budget_map.get(_player, {})
         _sum_rows.append({
             "rank": _rank, "medal": _medal, "player": _player,
             "pts": int(_pts), "gap": _gap, "played": _played,
@@ -233,6 +243,8 @@ else:
             "t3": sum(1 for t in _teams if _tmap_home.get(t,0)==3 and _alive_home(t)),
             "t4": sum(1 for t in _teams if _tmap_home.get(t,0)==4 and _alive_home(t)),
             "spent": _spent,
+            "budget_total": _bdata.get("budget", 0),
+            "budget_left": _bdata.get("available", 0),
             "pack": "PredictionPack" in _ph, "ninth": "NinthTeam" in _ph,
             "res": "Resurrection" in _ph,    "swap": "TeamSwap"   in _ph,
             "status": _status,
@@ -256,7 +268,8 @@ else:
         + _th("Played",     c="#9CA3AF",  rs=2, extra=_SEP)
         + _th("Teams Still In", c="#9CA3AF", cs=4,
               extra="border-bottom:1px solid #2A3A4A;" + _SEP)
-        + _th("💵 Spent",   c="#6EE7B7",  rs=2, extra=_SEP)
+        + _th("💵 Budget",   c="#6EE7B7",  cs=2,
+              extra="border-bottom:1px solid #2A3A4A;" + _SEP)
         + _th("Purchases",  c="#9CA3AF",  cs=4,
               extra="border-bottom:1px solid #2A3A4A")
     )
@@ -265,6 +278,8 @@ else:
         + _th("T2", c=_TC[2], bg=f"{_TC[2]}20")
         + _th("T3", c=_TC[3], bg=f"{_TC[3]}20")
         + _th("T4", c=_TC[4], bg=f"{_TC[4]}20", extra=_SEP)
+        + _th("Spent",  c="#6EE7B7")
+        + _th("Left",   c="#9CA3AF", extra=_SEP)
         + _th("Pack",  c="#9CA3AF")
         + _th("9th",   c="#9CA3AF")
         + _th("Res",   c="#9CA3AF")
@@ -303,7 +318,10 @@ else:
                 style = f"color:{tc};font-weight:800;{sep}"
             cells += _td(v, style)
 
-        cells += _td(f"💵 €{r['spent']}", f"{op}color:#6EE7B7;font-weight:700;{_SEP}")
+        cells += _td(f"💵 €{r['spent']}", f"{op}color:#6EE7B7;font-weight:700")
+        _left = r["budget_left"]
+        _left_c = "#EF4444" if _left < 0 else ("#F59E0B" if _left == 0 else "#9CA3AF")
+        cells += _td(f"€{int(_left)}", f"{op}color:{_left_c};font-weight:600;{_SEP}")
 
         for key in ("pack","ninth","res","swap"):
             v = r[key]
