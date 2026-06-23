@@ -34,6 +34,7 @@ COSTS: dict[str, int] = {
     "NinthTeam":      3,
     "Resurrection":   3,
     "Insurance":      2,
+    "TeamSwap":       5,
 }
 
 _now = datetime.now(tz=timezone.utc)
@@ -44,6 +45,7 @@ _DL_KEY: dict[str, str] = {
     "NinthTeam":            "ninth_team_draw",
     "Resurrection":         "resurrection_window_close",
     "Insurance":            "group_stage_closes",
+    "TeamSwap":             "team_swap_deadline",
     "PreTournamentCaptain": "pre_tournament_captain",
     "KnockoutCaptain":      "knockout_captain_deadline",
 }
@@ -54,6 +56,7 @@ _DL_CAT: dict[str, str] = {
     "PreTournamentCaptain": "group",
     "NinthTeam":            "knockout",
     "Resurrection":         "knockout",
+    "TeamSwap":             "knockout",
     "KnockoutCaptain":      "knockout",
 }
 _deadlines: dict[str, datetime] = {}
@@ -116,6 +119,7 @@ PTYPES = [
     ("Mulligan",       "Mulligan",    3, _GRP),
     ("NinthTeam",      "Ninth",       3, _KO),
     ("Resurrection",   "Resurrection",3, _KO),
+    ("TeamSwap",       "Swap",        5, _KO),
 ]
 
 
@@ -450,6 +454,32 @@ with tab_shop:
                             _dlg_resurrection(player, player_teams, cost)
                         else:
                             _dlg_simple(player, pt, label, cost)
+
+        # Team Swap — admin-executed, informational card only
+        _ts_open = _open("TeamSwap")
+        _ts_owned = "TeamSwap" in owned_types
+        _ts_status_html = (
+            '<span style="color:#6EE7B7;font-weight:600">✓ Recorded</span>' if _ts_owned
+            else '<span style="color:#9CA3AF">Contact admin to arrange</span>' if _ts_open
+            else '<span style="color:#4B5563;font-style:italic">🔒 Deadline passed</span>'
+        )
+        st.markdown(
+            f'<div style="background:#1A2535;border:1px solid #2A3A4A;border-radius:8px;'
+            f'padding:0.8rem 1rem;margin-bottom:0.5rem">'
+            f'<div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;flex-wrap:wrap">'
+            f'<span style="font-weight:700;color:#F5F5F5">Team Swap '
+            f'<span style="color:#D4A017">€5</span></span>'
+            f'{_dl_badge("TeamSwap")}'
+            f'</div>'
+            f'<div style="color:#9CA3AF;font-size:0.83rem;margin:0.2rem 0 0.35rem">'
+            f'Exchange your entire roster with another player. '
+            f'<strong style="color:#F5F5F5">Points already earned are not transferred</strong> — '
+            f'only future points count. Admin executes the swap after both players agree. '
+            f'Each roster can only be swapped once.</div>'
+            f'{_ts_status_html}'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
         # Prediction picks editor
         if "PredictionPack" in owned_types:
