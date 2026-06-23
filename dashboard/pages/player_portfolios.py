@@ -231,12 +231,11 @@ col_teams, col_extras = st.columns([3, 2], gap="large")
 with col_teams:
     st.subheader("Teams & Points")
 
-    all_teams = list(dict.fromkeys(eff["group_stage"] + eff["knockout"]))
-
-    # Use the team_points already computed by calculate_player_points
+    all_teams    = list(dict.fromkeys(eff["group_stage"] + eff["knockout"]))
+    hist_teams   = result.get("historical_teams", [])
     stored_team_pts = result.get("team_points", {})
 
-    for team in all_teams:
+    def _team_card(team: str, is_historical: bool = False) -> None:
         tier  = tier_map.get(team, 1)
         rnd   = _round_reached(team)
         in_gs = team in eff["group_stage"]
@@ -250,12 +249,10 @@ with col_teams:
         sp_pts    = tp.get("special", 0)
         total_pts = tp.get("total", 0)
         eliminated = _is_eliminated(rnd)
+
         is_pre_cap = team == pre_cap_team
         is_ko_cap  = team == kn_cap_team
-
-        # Captain bonus for this team
-        cap_bonus = 0.0
-        cap_tag   = ""
+        cap_bonus, cap_tag = 0.0, ""
         if is_pre_cap:
             cap_bonus += captain_info.get("pre_tournament_bonus", 0)
             cap_tag = "★ Pre"
@@ -263,10 +260,11 @@ with col_teams:
             cap_bonus += captain_info.get("knockout_bonus", 0)
             cap_tag = (cap_tag + " + KO").lstrip(" + ") if cap_tag else "★ KO"
 
-        tier_col = TIER_COLORS.get(tier, "#9CA3AF")
+        tier_col   = TIER_COLORS.get(tier, "#9CA3AF")
         status_txt = ROUND_LABELS.get(rnd, "🟢 Active")
-        text_alpha = "0.5" if eliminated else "1"
-        cap_html = (
+        text_alpha = "0.5" if (eliminated and not is_historical) else "1"
+        bg_color   = "#17202A" if is_historical else "#1E2937"
+        cap_html   = (
             f'<span style="color:#D4A017;font-size:0.68rem;font-weight:700;'
             f'background:rgba(212,160,23,0.15);border-radius:4px;padding:1px 5px">{cap_tag}</span>'
             if cap_tag else ""
@@ -275,30 +273,35 @@ with col_teams:
             f'<span style="color:#6EE7B7;font-size:0.75rem;font-weight:600"> +{cap_bonus:.0f} cap</span>'
             if cap_bonus > 0 else ""
         )
-        stage_label = ("Group + KO" if in_gs and in_ko else "KO only" if in_ko else "Group")
-        bd_html = _breakdown_html(tp.get("breakdown", {}))
+        if is_historical:
+            stage_label = f"Now: {status_txt}"
+            pts_label   = "pts earned"
+        else:
+            stage_label = ("Group + KO" if in_gs and in_ko else "KO only" if in_ko else "Group")
+            pts_label   = "pts"
+        bd_html = _breakdown_html(tp.get("breakdown", {})) if not is_historical else ""
         ga = _gc_map.get(team, None)
         ga_html = (
             f'<span style="color:#F87171;font-size:0.65rem;background:#3A1515;border-radius:3px;'
             f'padding:1px 4px;margin-left:0.3rem">GA:{ga}</span>'
-            if ga is not None else ""
+            if ga is not None and not is_historical else ""
         )
 
         st.markdown(
-            f'<div style="background:#1E2937;border-left:3px solid {tier_col};border-radius:0 6px 6px 0;'
+            f'<div style="background:{bg_color};border-left:3px solid {tier_col};border-radius:0 6px 6px 0;'
             f'padding:0.45rem 0.7rem;margin-bottom:0.35rem;opacity:{text_alpha}">'
             f'<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:0.3rem">'
             f'<div>'
             f'<span style="color:{tier_col};font-size:0.65rem;font-weight:700;background:{tier_col}22;'
             f'border-radius:3px;padding:0 4px;margin-right:0.3rem">T{tier}</span>'
             f'<span style="color:#F5F5F5;font-weight:600;font-size:0.9rem">{team}</span>'
-            f'{ga_html} '
-            f'{cap_html}'
-            f'<div style="color:#9CA3AF;font-size:0.7rem;margin-top:0.1rem">{status_txt} · {stage_label}</div>'
+            f'{ga_html} {cap_html}'
+            f'<div style="color:#9CA3AF;font-size:0.7rem;margin-top:0.1rem">{stage_label}</div>'
             f'</div>'
             f'<div style="text-align:right">'
-            f'<div style="color:#F5F5F5;font-weight:700;font-size:1.0rem">{total_pts:.0f} pts</div>'
-            f'<div style="color:#9CA3AF;font-size:0.7rem">Grp {gs_pts:.0f} · KO {ko_pts:.0f}{"· Sp " + f"{sp_pts:+.0f}" if sp_pts else ""}{bonus_html}</div>'
+            f'<div style="color:#F5F5F5;font-weight:700;font-size:1.0rem">{total_pts:.0f} {pts_label}</div>'
+            f'<div style="color:#9CA3AF;font-size:0.7rem">Grp {gs_pts:.0f} · KO {ko_pts:.0f}'
+            f'{"· Sp " + f"{sp_pts:+.0f}" if sp_pts else ""}{bonus_html}</div>'
             f'</div>'
             f'</div>'
             f'{bd_html}'
@@ -306,18 +309,54 @@ with col_teams:
             unsafe_allow_html=True,
         )
 
-    # Bar chart
+    if hist_teams:
+        sub_curr, sub_hist = st.columns(2, gap="medium")
+        with sub_curr:
+            st.markdown(
+                '<div style="color:#6EE7B7;font-size:0.78rem;font-weight:700;margin-bottom:0.4rem">'
+                '↔ Current Teams</div>', unsafe_allow_html=True
+            )
+            for team in all_teams:
+                _team_card(team)
+        with sub_hist:
+            st.markdown(
+                '<div style="color:#9CA3AF;font-size:0.78rem;font-weight:700;margin-bottom:0.4rem">'
+                '↩ Previous Teams (swapped away)</div>', unsafe_allow_html=True
+            )
+            for team in hist_teams:
+                _team_card(team, is_historical=True)
+    else:
+        for team in all_teams:
+            _team_card(team)
+
+    # Bar chart — current teams only
     _chart_pts = [stored_team_pts.get(t, {}).get("total", 0) for t in all_teams]
-    if any(p > 0 for p in _chart_pts):
+    if hist_teams:
+        _chart_pts_hist = [stored_team_pts.get(t, {}).get("total", 0) for t in hist_teams]
+        _all_chart_teams = all_teams + hist_teams
+        _all_chart_pts   = _chart_pts + _chart_pts_hist
+        _all_chart_cols  = (
+            [TIER_COLORS.get(tier_map.get(t, 1), "#9CA3AF") for t in all_teams]
+            + ["#4B5563"] * len(hist_teams)
+        )
+    else:
+        _all_chart_teams, _all_chart_pts, _all_chart_cols = (
+            all_teams, _chart_pts,
+            [TIER_COLORS.get(tier_map.get(t, 1), "#9CA3AF") for t in all_teams],
+        )
+    if any(p > 0 for p in _all_chart_pts):
         st.markdown("---")
         fig = go.Figure(go.Bar(
-            x=all_teams,
-            y=_chart_pts,
-            marker_color=[TIER_COLORS.get(tier_map.get(t, 1), "#9CA3AF") for t in all_teams],
+            x=_all_chart_teams,
+            y=_all_chart_pts,
+            marker_color=_all_chart_cols,
             hovertemplate="%{x}: %{y:.0f} pts<extra></extra>",
         ))
         _bar_layout = {**PLOTLY_LAYOUT}
-        _bar_layout.update(title="Points by Team", height=240, margin=dict(l=5, r=5, t=35, b=5))
+        _bar_layout.update(
+            title="Points by Team" + (" (grey = previous)" if hist_teams else ""),
+            height=240, margin=dict(l=5, r=5, t=35, b=5),
+        )
         fig.update_layout(**_bar_layout)
         st.plotly_chart(fig, use_container_width=True)
 
