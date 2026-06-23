@@ -472,10 +472,11 @@ with tab_shop:
             f'{_dl_badge("TeamSwap")}'
             f'</div>'
             f'<div style="color:#9CA3AF;font-size:0.83rem;margin:0.2rem 0 0.35rem">'
-            f'Exchange your entire roster with another player. '
+            f'Two players swap their entire roster — all 8 teams are exchanged. '
             f'<strong style="color:#F5F5F5">Points already earned are not transferred</strong> — '
-            f'only future points count. Admin executes the swap after both players agree. '
-            f'Each roster can only be swapped once.</div>'
+            f'only future points from the swapped teams count. The player who chose the swap pays €5. '
+            f'Each set of 8 teams can only be swapped once — first come, first served. '
+            f'Send Oisin a message to lock in. Ninth Team and Resurrection follow your updated roster.</div>'
             f'{_ts_status_html}'
             f'</div>',
             unsafe_allow_html=True,
