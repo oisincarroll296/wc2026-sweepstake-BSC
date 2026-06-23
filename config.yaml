@@ -16,7 +16,7 @@ sweepstake:
     PredictionPack: 5
     Mulligan: 3
     NinthTeam: 3
-    Resurrection: 5
+    Resurrection: 3
     Insurance: 2
 
   balance_threshold: 20

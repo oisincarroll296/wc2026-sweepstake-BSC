@@ -54,7 +54,7 @@ Qatar, Saudi Arabia, South Africa, DR Congo, Jordan, Iraq, Cape Verde, Ghana, Bo
 | Mulligan        | €3   |
 | Insurance       | €2   |
 | Ninth Team      | €3   |
-| Resurrection    | €5   |
+| Resurrection    | €3   |
 
 ---
 

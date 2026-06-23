@@ -43,7 +43,7 @@ teams_per_tier = max(1, round(24 / n_players))
 
 - Configured in `config.yaml` under `sweepstake.budget_per_player` and `sweepstake.addon_costs`.
 - `BuyIn` is **not** deducted from the budget.
-- Add-on costs (default): PredictionPack €5, Mulligan €3, NinthTeam €3, Resurrection €5, Insurance €2.
+- Add-on costs (default): PredictionPack €5, Mulligan €3, NinthTeam €3, Resurrection €3, Insurance €2.
 - Budget overview shown in Admin → Purchases tab.
 - Players can go over budget — the admin sees a warning but it is not hard-blocked.
 
@@ -56,7 +56,7 @@ sweepstake:
     PredictionPack: 5
     Mulligan: 3
     NinthTeam: 3
-    Resurrection: 5
+    Resurrection: 3
     Insurance: 2
 ```
 
