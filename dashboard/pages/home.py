@@ -13,7 +13,7 @@ from dashboard.data import (
     get_prize_pool, get_overall_leaderboard, get_top_team,
     get_paid_count, get_pack_count, get_audit_log, get_events,
     get_assignments, get_participants, get_deadlines, countdown, DEADLINE_LABELS,
-    get_fixtures, get_match_results,
+    get_fixtures, get_match_results, get_match_stats, get_tier_map, get_purchases,
 )
 from dashboard.components.ui import page_header, empty_state
 
@@ -183,51 +183,157 @@ with r2c2:
 
 st.divider()
 
-# ── Two-column layout ──────────────────────────────────────────────────────
-col_left, col_right = st.columns([3, 2], gap="large")
+# ── Player Summary Table ───────────────────────────────────────────────────
+_PRICES_LOOKUP = {
+    "BuyIn": 5, "PredictionPack": 5, "Mulligan": 3,
+    "NinthTeam": 3, "Resurrection": 3, "Insurance": 2, "TeamSwap": 5,
+}
+_ELIM_RNDS = {"GroupStage", "R16", "QF", "SF", "Final"}
+_TC = {1: "#105AAC", 2: "#15803D", 3: "#A16207", 4: "#B91C1C"}
 
-with col_left:
-    st.subheader("Current Standings")
-    if lb.empty:
-        empty_state("No scores yet — draw pending.")
-    else:
-        leader_pts = float(lb.iloc[0]["TotalPoints"]) if "TotalPoints" in lb.columns else 0.0
+_ms_home    = get_match_stats()
+_tmap_home  = get_tier_map()
+_purch_home = get_purchases()
 
-        rows = []
-        for _, row in lb.iterrows():
-            rank   = int(row.get("Rank", 0))
-            pts    = float(row.get("TotalPoints", 0))
-            status = row.get("PaymentStatus", "UNPAID")
-            player = row.get("Player", "")
-            medal  = {1: "🥇", 2: "🥈", 3: "🥉"}.get(rank, f"#{rank}")
-            gap    = f"{pts - leader_pts:+.0f}" if rank > 1 else "—"
-            played = _player_played.get(player, 0)
-            rows.append({
-                "":        medal,
-                "Player":  player,
-                "Points":  f"{pts:.0f}",
-                "Gap":     gap,
-                "Played":  str(played) if played else "0",
-                "Status":  status,
-            })
+_rr_home: dict[str, str] = {}
+if not _ms_home.empty:
+    for _, _msr in _ms_home.iterrows():
+        _rr_home[str(_msr["Team"])] = str(_msr.get("RoundReached", "") or "")
 
-        display = pd.DataFrame(rows)
-        lb_status = lb["PaymentStatus"].tolist() if "PaymentStatus" in lb.columns else ["PAID"] * len(lb)
+def _alive_home(t: str) -> bool:
+    return _rr_home.get(t, "") not in _ELIM_RNDS
 
-        def _row_style(row):
-            status = lb_status[row.name]
-            if status == "UNPAID":
-                return ["color: #6B7280"] * len(row)
-            if row.name == 0:
-                return ["background-color: rgba(212,160,23,0.15); font-weight:700"] * len(row)
-            return [""] * len(row)
+_pp_home: dict[str, set] = {}
+if not _purch_home.empty:
+    for _, _pr in _purch_home.iterrows():
+        _pp_home.setdefault(str(_pr["Player"]), set()).add(str(_pr["PurchaseType"]))
 
-        st.dataframe(
-            display.style.apply(_row_style, axis=1),
-            use_container_width=True, hide_index=True,
+if lb.empty:
+    empty_state("No scores yet — draw pending.")
+else:
+    _leader_pts = float(lb.iloc[0]["TotalPoints"]) if "TotalPoints" in lb.columns else 0.0
+    _sum_rows: list[dict] = []
+
+    for _, _lrow in lb.iterrows():
+        _rank   = int(_lrow.get("Rank", 0))
+        _pts    = float(_lrow.get("TotalPoints", 0))
+        _player = str(_lrow.get("Player", ""))
+        _status = str(_lrow.get("PaymentStatus", "UNPAID"))
+        _medal  = {1: "🥇", 2: "🥈", 3: "🥉"}.get(_rank, f"#{_rank}")
+        _gap    = f"−{_leader_pts - _pts:.0f}" if _rank > 1 else "—"
+        _played = _player_played.get(_player, 0)
+        _teams  = _assignments.get(_player, [])
+        _ph     = _pp_home.get(_player, set())
+        _spent  = sum(_PRICES_LOOKUP.get(p, 0) for p in _ph)
+        _sum_rows.append({
+            "rank": _rank, "medal": _medal, "player": _player,
+            "pts": int(_pts), "gap": _gap, "played": _played,
+            "t1": sum(1 for t in _teams if _tmap_home.get(t,0)==1 and _alive_home(t)),
+            "t2": sum(1 for t in _teams if _tmap_home.get(t,0)==2 and _alive_home(t)),
+            "t3": sum(1 for t in _teams if _tmap_home.get(t,0)==3 and _alive_home(t)),
+            "t4": sum(1 for t in _teams if _tmap_home.get(t,0)==4 and _alive_home(t)),
+            "spent": _spent,
+            "pack": "PredictionPack" in _ph, "ninth": "NinthTeam" in _ph,
+            "res": "Resurrection" in _ph,    "swap": "TeamSwap"   in _ph,
+            "status": _status,
+        })
+
+    _HS = "padding:0.32rem 0.6rem;font-size:0.71rem;font-weight:700;white-space:nowrap;text-align:center"
+    _CS = "padding:0.38rem 0.6rem;font-size:0.83rem;text-align:center;border-bottom:1px solid #131f2e"
+    _SEP = "border-right:1px solid #2A3A4A"
+
+    def _th(txt, c="#9CA3AF", bg="transparent", extra="", rs=1, cs=1):
+        return (
+            f'<th rowspan="{rs}" colspan="{cs}" '
+            f'style="{_HS};color:{c};background:{bg};{extra}">{txt}</th>'
         )
 
-with col_right:
+    h1 = (
+        _th("",             c="#6B7280",  rs=2, extra="width:2.2rem")
+        + _th("Player",     c="#F5F5F5",  rs=2, extra="text-align:left;min-width:90px")
+        + _th("Pts",        c="#D4A017",  rs=2)
+        + _th("Gap",        c="#9CA3AF",  rs=2)
+        + _th("Played",     c="#9CA3AF",  rs=2, extra=_SEP)
+        + _th("Teams Still In", c="#9CA3AF", cs=4,
+              extra="border-bottom:1px solid #2A3A4A;" + _SEP)
+        + _th("💵 Spent",   c="#6EE7B7",  rs=2, extra=_SEP)
+        + _th("Purchases",  c="#9CA3AF",  cs=4,
+              extra="border-bottom:1px solid #2A3A4A")
+    )
+    h2 = (
+        _th("T1", c=_TC[1], bg=f"{_TC[1]}20")
+        + _th("T2", c=_TC[2], bg=f"{_TC[2]}20")
+        + _th("T3", c=_TC[3], bg=f"{_TC[3]}20")
+        + _th("T4", c=_TC[4], bg=f"{_TC[4]}20", extra=_SEP)
+        + _th("Pack",  c="#9CA3AF")
+        + _th("9th",   c="#9CA3AF")
+        + _th("Res",   c="#9CA3AF")
+        + _th("Swap",  c="#9CA3AF")
+    )
+
+    def _td(val, extra=""):
+        return f'<td style="{_CS};{extra}">{val}</td>'
+
+    body = ""
+    for r in _sum_rows:
+        faded  = r["status"] == "UNPAID"
+        leader = r["rank"] == 1 and not faded
+        op     = "opacity:0.38;" if faded else ""
+        row_bg = "background:rgba(212,160,23,0.07)" if leader else ""
+
+        cells  = _td(r["medal"], f"{op}font-weight:700")
+        pcolor = "#D4A017" if leader else "#F5F5F5"
+        pw     = "800" if leader else "600"
+        cells += f'<td style="{_CS};text-align:left;{op}color:{pcolor};font-weight:{pw}">{r["player"]}</td>'
+        cells += _td(r["pts"],    f"{op}color:{'#D4A017' if leader else '#F5F5F5'};font-weight:{'800' if leader else '600'}")
+        gap_c  = "#EF4444" if r["gap"] != "—" else "#D4A017"
+        cells += _td(r["gap"],   f"{op}color:{gap_c}")
+        cells += _td(r["played"],f"{op}{_SEP}")
+
+        for n, tc in ((1,_TC[1]),(2,_TC[2]),(3,_TC[3]),(4,_TC[4])):
+            v   = r[f"t{n}"]
+            sep = _SEP if n == 4 else ""
+            if faded:
+                style = f"{op}{sep}"
+            elif v == 0:
+                style = f"color:#2A3A4A;font-weight:700;{sep}"
+            elif v == 1:
+                style = f"color:{tc};font-weight:700;opacity:0.6;{sep}"
+            else:
+                style = f"color:{tc};font-weight:800;{sep}"
+            cells += _td(v, style)
+
+        cells += _td(f"💵 €{r['spent']}", f"{op}color:#6EE7B7;font-weight:700;{_SEP}")
+
+        for key in ("pack","ninth","res","swap"):
+            v = r[key]
+            cells += _td("✓" if v else "·",
+                         f"{op}color:{'#6EE7B7' if v else '#2A3A4A'};font-weight:{'700' if v else '400'}")
+
+        body += f'<tr style="{row_bg}">{cells}</tr>'
+
+    st.markdown(
+        f'<div style="overflow-x:auto">'
+        f'<table style="width:100%;border-collapse:collapse;background:#0D1B2A;'
+        f'border-radius:8px;overflow:hidden;font-family:inherit">'
+        f'<thead>'
+        f'<tr style="background:#1A2535;border-bottom:1px solid #2A3A4A">{h1}</tr>'
+        f'<tr style="background:#1A2535;border-bottom:2px solid #2A3A4A">{h2}</tr>'
+        f'</thead>'
+        f'<tbody>{body}</tbody>'
+        f'</table></div>'
+        f'<div style="font-size:0.69rem;color:#4B5563;margin-top:0.3rem">'
+        f'T1–T4 = teams still in the tournament per tier &nbsp;·&nbsp; '
+        f'Unpaid players faded</div>',
+        unsafe_allow_html=True,
+    )
+
+st.divider()
+
+# ── Prize Split + Fixtures ─────────────────────────────────────────────────
+col_left, col_right = st.columns([2, 3], gap="large")
+
+with col_left:
     # Prize Split
     st.subheader("Prize Split")
     pool_val = pool.get("current_pot", 0)
@@ -247,6 +353,7 @@ with col_right:
             unsafe_allow_html=True,
         )
 
+with col_right:
     # Today's Fixtures
     st.subheader("Today's Fixtures")
     try:
