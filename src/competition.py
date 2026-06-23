@@ -1,4 +1,4 @@
-"""Competition logic layer for World Cup 2026 Sweepstake."""
+"""Competition logic layer for World Cup 2026 Sweepstake."""  # cache-bust 2026-06-23
 
 import os
 import random
