@@ -10,12 +10,10 @@ while _root_str in sys.path:
     sys.path.remove(_root_str)
 sys.path.insert(0, _root_str)
 
-# Purge any src.* modules that were loaded from a different project root so
-# they get re-imported from the correct location on next access.
-_wrong = [k for k in sys.modules if k == "src" or k.startswith("src.")
-          if hasattr(sys.modules[k], "__file__") and sys.modules[k].__file__
-          and not sys.modules[k].__file__.startswith(_root_str)]
-for _k in _wrong:
+# Purge ALL src.* modules so they are always re-imported fresh from _root_str.
+# This prevents stale sys.modules entries (e.g. from hot-reload or a sibling
+# project) from serving an outdated version of the code.
+for _k in [k for k in sys.modules if k == "src" or k.startswith("src.")]:
     del sys.modules[_k]
 
 import streamlit as st
