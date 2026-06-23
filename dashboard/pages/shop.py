@@ -32,7 +32,7 @@ COSTS: dict[str, int] = {
     "PredictionPack": 5,
     "Mulligan":       3,
     "NinthTeam":      3,
-    "Resurrection":   5,
+    "Resurrection":   3,
     "Insurance":      2,
 }
 
@@ -115,7 +115,7 @@ PTYPES = [
     ("Insurance",      "Insurance",   2, _GRP),
     ("Mulligan",       "Mulligan",    3, _GRP),
     ("NinthTeam",      "Ninth",       3, _KO),
-    ("Resurrection",   "Resurrection",5, _KO),
+    ("Resurrection",   "Resurrection",3, _KO),
 ]
 
 

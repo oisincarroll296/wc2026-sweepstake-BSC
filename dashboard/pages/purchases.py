@@ -53,8 +53,8 @@ _price_chips = "".join(
     for _, lbl, cost in [
         ("Buy In", "Buy In", 5), ("Prediction Pack", "Prediction Pack", 5),
         ("Insurance", "Insurance", 2), ("Mulligan", "Mulligan", 3),
-        ("Ninth Team", "Ninth Team", 3), ("Resurrection", "Resurrection", 5),
-        ("Team Swap", "Team Swap", 8),
+        ("Ninth Team", "Ninth Team", 3), ("Resurrection", "Resurrection", 3),
+        ("Team Swap", "Team Swap", 5),
     ]
 )
 st.markdown(
@@ -95,8 +95,8 @@ PTYPES = [
     ("Insurance",     "Insurance",    2),
     ("Mulligan",      "Mulligan",     3),
     ("NinthTeam",     "Ninth",        3),
-    ("Resurrection",  "Resurrection", 5),
-    ("TeamSwap",      "Swap",         8),
+    ("Resurrection",  "Resurrection", 3),
+    ("TeamSwap",      "Swap",         5),
 ]
 COSTS = {pt: cost for pt, _, cost in PTYPES}
 

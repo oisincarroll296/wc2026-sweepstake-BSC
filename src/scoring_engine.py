@@ -495,6 +495,7 @@ def calculate_player_points(
     predictions: pd.DataFrame,
     tournament_results: Optional[dict] = None,
     tier_map: Optional[dict[str, int]] = None,
+    swap_offsets: Optional[pd.DataFrame] = None,
 ) -> dict:
     """Complete points calculation for one player.  No file I/O — all data
     must be passed in.  Use load_* helpers to hydrate arguments from disk.
@@ -517,12 +518,46 @@ def calculate_player_points(
         for t in all_relevant
     }
 
-    gs_total      = sum(team_pts[t]["group_stage"] for t in gs_teams)
-    ko_total      = sum(team_pts[t]["knockout"]    for t in ko_teams)
-    special_total = sum(team_pts[t]["special"]     for t in all_relevant)
-    base_total    = gs_total + ko_total  # match events + progression + upset wins
+    # Apply team-swap point offsets
+    hist_teams: list[str] = []
+    if swap_offsets is not None and not swap_offsets.empty:
+        received = swap_offsets[swap_offsets["NewOwner"] == player]
+        for _, row in received.iterrows():
+            team = str(row["Team"])
+            if team in team_pts:
+                tp = team_pts[team]
+                gs_d = float(row["GroupStagePoints"])
+                ko_d = float(row["KnockoutPoints"])
+                sp_d = float(row["SpecialPoints"])
+                team_pts[team] = {
+                    "group_stage": max(0.0, tp["group_stage"] - gs_d),
+                    "knockout":    max(0.0, tp["knockout"]    - ko_d),
+                    "special":     max(0.0, tp["special"]     - sp_d),
+                    "total":       max(0.0, tp["total"]       - gs_d - ko_d - sp_d),
+                    "breakdown":   tp.get("breakdown", {}),
+                }
+        gave_away = swap_offsets[swap_offsets["OriginalOwner"] == player]
+        for _, row in gave_away.iterrows():
+            team = str(row["Team"])
+            hist_teams.append(team)
+            team_pts[team] = {
+                "group_stage": float(row["GroupStagePoints"]),
+                "knockout":    float(row["KnockoutPoints"]),
+                "special":     float(row["SpecialPoints"]),
+                "total":       float(row["TotalPoints"]),
+                "breakdown":   {},
+            }
 
-    captain_info  = calculate_captain_bonus(player, team_pts, captains, eff)
+    gs_total      = sum(team_pts[t]["group_stage"] for t in list(gs_teams) + hist_teams)
+    ko_total      = sum(team_pts[t]["knockout"]    for t in list(ko_teams) + hist_teams)
+    special_total = sum(team_pts[t]["special"]     for t in list(all_relevant) + hist_teams)
+    base_total    = gs_total + ko_total
+
+    eff_for_captain = {
+        "group_stage": list(gs_teams) + hist_teams,
+        "knockout":    list(ko_teams) + hist_teams,
+    }
+    captain_info  = calculate_captain_bonus(player, team_pts, captains, eff_for_captain)
     insurance_pts = calculate_insurance_bonus(
         player, assignments, match_stats, purchases, tier_map
     )
@@ -540,6 +575,7 @@ def calculate_player_points(
         "player": player,
         "group_stage_teams": gs_teams,
         "knockout_teams": ko_teams,
+        "historical_teams": hist_teams,
         "team_points": team_pts,
         "group_stage_points": gs_total,
         "knockout_points": ko_total,
@@ -560,6 +596,7 @@ def calculate_leaderboard(
     captains: pd.DataFrame,
     predictions: pd.DataFrame,
     tournament_results: Optional[dict] = None,
+    swap_offsets: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """Full ranked leaderboard for all participants.
 
@@ -589,7 +626,7 @@ def calculate_leaderboard(
     for player in participants:
         info = calculate_player_points(
             player, assignments, match_stats, purchases,
-            captains, predictions, tr, tier_map,
+            captains, predictions, tr, tier_map, swap_offsets=swap_offsets,
         )
         all_teams = list({*info["group_stage_teams"], *info["knockout_teams"]})
         bd: dict[str, float] = {}

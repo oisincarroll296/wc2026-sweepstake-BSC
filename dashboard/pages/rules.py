@@ -144,7 +144,7 @@ with tab_purchases:
             unsafe_allow_html=True,
         )
         st.markdown(
-            '<div class="card"><h4 style="color:#D4A017;margin:0">Resurrection — €5</h4>'
+            '<div class="card"><h4 style="color:#D4A017;margin:0">Resurrection — €3</h4>'
             '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.4rem 0 0">'
             'You <strong>choose which of your eliminated teams</strong> gets swapped out. '
             'A replacement is randomly drawn from surviving teams of the same tier. '
@@ -152,11 +152,12 @@ with tab_purchases:
             unsafe_allow_html=True,
         )
         st.markdown(
-            '<div class="card"><h4 style="color:#D4A017;margin:0">Team Swap — €8</h4>'
+            '<div class="card"><h4 style="color:#D4A017;margin:0">Team Swap — €5</h4>'
             '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.4rem 0 0">'
             'Two players exchange their entire roster — all teams swap. '
-            'The player who <strong>chose</strong> the swap pays €8. '
-            'Each set of teams can only be swapped once — first come, first served. Send Oisin a message to lock in. '
+            'The player who <strong>chose</strong> the swap pays €5. '
+            '<strong>Points already earned are not transferred</strong> — only future points from the swapped teams count. '
+            'Each set of teams can only be swapped once — first come, first served. Send the admin a message to lock in. '
             'Your Ninth Team and Resurrection follow your updated roster.</p></div>',
             unsafe_allow_html=True,
         )

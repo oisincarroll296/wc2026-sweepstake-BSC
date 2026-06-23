@@ -375,13 +375,16 @@ with tabs[1]:
     st.subheader("Team Swaps")
     st.caption(
         "Execute a full roster swap between two players — all teams are exchanged. "
-        "The initiator (the player who chose the swap) pays €8. "
-        "Each set of teams can only be swapped once — first come, first served. Send Oisin a message to lock in."
+        "The initiator (the player who chose the swap) pays €5. "
+        "Points already earned are not transferred — only future points from the swapped teams count. "
+        "Each set of teams can only be swapped once — first come, first served."
     )
 
     from src.competition import (
         load_swaps as _load_swaps, get_swapped_players as _get_swapped_players,
-        execute_team_swap as _execute_team_swap, SWAPS_PATH as _SWAPS_PATH,
+        execute_team_swap as _execute_team_swap,
+        load_swap_offsets as _load_swap_offsets,
+        SWAPS_PATH as _SWAPS_PATH, SWAP_OFFSETS_PATH as _SWAP_OFFSETS_PATH,
     )
     from src.event_engine import load_allocation as _la_swap
 
@@ -391,7 +394,7 @@ with tabs[1]:
     _sw_already     = _get_swapped_players(_sw_df)
     _sw_eligible    = [p for p in _sw_all_players if p not in _sw_already]
 
-    _sw_init = st.selectbox("Initiator (pays €8)", ["—"] + _sw_eligible, key="sw_init")
+    _sw_init = st.selectbox("Initiator (pays €5)", ["—"] + _sw_eligible, key="sw_init")
     _sw_ctrp = st.selectbox(
         "Counterpart",
         ["—"] + [p for p in _sw_eligible if p != _sw_init],
@@ -409,7 +412,7 @@ with tabs[1]:
             st.markdown(f"**{_sw_ctrp}'s current teams** (→ go to {_sw_init})")
             st.markdown("  \n".join(f"• {t}" for t in _sw_c_teams))
 
-    _sw_confirm = st.checkbox("I've confirmed payment of €8 from the initiator", key="sw_confirm")
+    _sw_confirm = st.checkbox("I've confirmed payment of €5 from the initiator", key="sw_confirm")
     if st.button("Execute Swap", type="primary", key="sw_submit", disabled=not _sw_confirm):
         if _sw_init == "—" or _sw_ctrp == "—":
             st.error("Select both players.")
@@ -418,22 +421,28 @@ with tabs[1]:
         else:
             try:
                 from src.competition import load_audit_log as _lal_sw
-                _sw_audit = _lal_sw()
-                _sw_purch, _sw_new, _sw_audit_new, _sw_errs = _execute_team_swap(
+                from dashboard.data import get_match_stats as _gms_sw, get_tier_map as _gtm_sw
+                _sw_audit      = _lal_sw()
+                _sw_offsets    = _load_swap_offsets()
+                _sw_purch, _sw_new, _sw_offsets_new, _sw_audit_new, _sw_errs = _execute_team_swap(
                     initiator=_sw_init,
                     counterpart=_sw_ctrp,
                     allocation_path=DATA / "allocation.csv",
                     purchases_path=DATA / "purchases.csv",
                     swaps=_sw_df, audit_log=_sw_audit,
+                    swap_offsets=_sw_offsets,
+                    match_stats=_gms_sw(),
+                    tier_map=_gtm_sw(),
                 )
                 if _sw_errs:
                     for _e in _sw_errs:
                         st.error(_e)
                 else:
                     _sw_new.to_csv(_SWAPS_PATH, index=False)
-                    _sync("swaps.csv")
+                    _sw_offsets_new.to_csv(_SWAP_OFFSETS_PATH, index=False)
                     _sw_audit_new.to_csv(DATA / "audit_log.csv", index=False)
-                    _sync("audit_log.csv", "allocation.csv", "purchases.csv")
+                    _sync("swaps.csv", "swap_offsets.csv", "audit_log.csv",
+                          "allocation.csv", "purchases.csv")
                     _refresh()
                     st.success(f"✓ Full roster swap complete: {_sw_init} ↔ {_sw_ctrp}")
                     st.rerun()
@@ -1433,7 +1442,7 @@ with tabs[11]:
             if _pur_path.exists():
                 _pur = pd.read_csv(_pur_path, dtype=str).fillna("")
                 _spent_types = set(_pur.loc[_pur["Player"] == _player, "PurchaseType"].tolist())
-            _addon_costs = {"PredictionPack": 5, "Mulligan": 3, "NinthTeam": 3, "Resurrection": 5, "Insurance": 2}
+            _addon_costs = {"PredictionPack": 5, "Mulligan": 3, "NinthTeam": 3, "Resurrection": 3, "Insurance": 2}
             _spent = sum(_addon_costs.get(pt, 0) for pt in _spent_types if pt in _addon_costs)
             _remaining = _cur - _spent
 

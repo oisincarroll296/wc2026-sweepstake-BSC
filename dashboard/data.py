@@ -19,6 +19,7 @@ from src.team_database  import load_teams
 from src.scoring_engine import load_match_stats, load_predictions, load_captains
 from src.competition    import (
     load_player_status, load_purchases, load_events, load_audit_log,
+    load_swap_offsets,
     calculate_prize_pool,
     prize_leaderboard, overall_leaderboard,
     get_team_ownership, get_predictions_centre,
@@ -85,6 +86,11 @@ def get_assignments() -> dict[str, list[str]]:
     return load_allocation().assignments
 
 
+@st.cache_data(ttl=30)
+def get_swap_offsets() -> pd.DataFrame:
+    return load_swap_offsets()
+
+
 # ── Derived loaders ─────────────────────────────────────────────────────────
 
 @st.cache_data(ttl=30)
@@ -145,6 +151,7 @@ def get_prize_leaderboard() -> pd.DataFrame:
         parts, get_assignments(), get_match_stats(),
         get_purchases(), get_captains(), get_predictions(),
         get_statuses(), tournament_results=get_tournament_results(),
+        swap_offsets=get_swap_offsets(),
     )
 
 
@@ -157,6 +164,7 @@ def get_overall_leaderboard() -> pd.DataFrame:
         parts, get_assignments(), get_match_stats(),
         get_purchases(), get_captains(), get_predictions(),
         get_statuses(), tournament_results=get_tournament_results(),
+        swap_offsets=get_swap_offsets(),
     )
 
 
