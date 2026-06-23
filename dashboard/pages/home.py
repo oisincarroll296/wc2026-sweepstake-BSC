@@ -281,7 +281,7 @@ else:
         + _th("T3", c=_TC[3], bg=f"{_TC[3]}20")
         + _th("T4", c=_TC[4], bg=f"{_TC[4]}20", extra=_SEP)
         + _th("Spent",  c="#6EE7B7")
-        + _th("Left",   c="#9CA3AF", extra=_SEP)
+        + _th("Total",  c="#9CA3AF", extra=_SEP)
         + _th("Pack",  c="#9CA3AF")
         + _th("9th",   c="#9CA3AF")
         + _th("Res",   c="#9CA3AF")
@@ -321,9 +321,7 @@ else:
             cells += _td(v, style)
 
         cells += _td(f"💵 €{r['spent']}", f"{op}color:#6EE7B7;font-weight:700")
-        _left = r["budget_left"]
-        _left_c = "#EF4444" if _left < 0 else ("#F59E0B" if _left == 0 else "#9CA3AF")
-        cells += _td(f"€{int(_left)}", f"{op}color:{_left_c};font-weight:600;{_SEP}")
+        cells += _td(f"€{int(r['budget_total'])}", f"{op}color:#6B7280;font-weight:600;{_SEP}")
 
         for key in ("pack","ninth","res","swap"):
             v = r[key]
