@@ -1,8 +1,8 @@
 Player,Status,PaidTimestamp,PreTournamentCaptain,KnockoutCaptain,WorldCupWinner,RunnerUp,BronzeMedal,GoldenBoot,DarkHorse,FirstKnockedOut,Budget
-Darach,UNPAID,,,,,,,,,,
-Conor Carson,UNPAID,,,,,,,,,,
-Conor Cremin,PAID,,,,,,,,,,10
-MoronJ,UNPAID,,France,Spain,Spain,Argentina,Portugal,Mbappé,New Zealand,Curacao,
-Declan,PAID,,Croatia,,France,Spain,Netherlands,Mbappé,Scotland,Curacao,13
-Moyo,UNPAID,,,,,,,,,,
-Oisin,PAID,,Argentina,,Argentina,Spain,Germany,Mbappe,Norway,South Africa,13
+Darach,UNPAID,,Haiti,Argentina,,,,,,,
+Conor Carson,UNPAID,,Paraguay,Colombia,,,,,,,
+Conor Cremin,PAID,,Ghana,Portugal,,,,,,,10
+MoronJ,UNPAID,,Haiti,Germany,Spain,Argentina,Portugal,Mbappé,New Zealand,Curacao,
+Declan,PAID,,France,Brazil,France,Spain,Netherlands,Mbappé,Scotland,Curacao,13
+Moyo,UNPAID,,Norway,Colombia,,,,,,,
+Oisin,PAID,,Argentina,Netherlands,Argentina,Spain,Germany,Mbappe,Norway,South Africa,13
