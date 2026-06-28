@@ -58,23 +58,28 @@ st.divider()
 
 # ── 2. Points Breakdown Stacked Bar ───────────────────────────────────────
 if not lb.empty:
-    _breakdown_def = [
-        ("GroupStagePoints", "Group Stage",  "#4A9A7A"),
-        ("KnockoutPoints",   "Knockout",     "#105AAC"),
-        ("CaptainBonus",     "Captains",     COLORS["gold"]),
-        ("PredictionBonus",  "Predictions",  "#6A5ACD"),
-    ]
-    _avail_bd = [(col, lbl, clr) for col, lbl, clr in _breakdown_def if col in lb.columns]
-    if _avail_bd:
+    _req_cols = {"GroupStagePoints", "KnockoutPoints", "CaptainBonus", "PredictionBonus"}
+    if _req_cols.issubset(lb.columns):
         st.subheader("📐 Points Breakdown")
+        # Knockout segment absorbs InsuranceBonus + SpecialBonus so the stack = TotalPoints
+        _ko_vals = (
+            lb["KnockoutPoints"].astype(float)
+            + lb.get("InsuranceBonus", 0).astype(float)
+            + lb.get("SpecialBonus", 0).astype(float)
+        )
         fig2 = go.Figure()
-        for col, lbl, clr in _avail_bd:
-            fig2.add_trace(go.Bar(
-                name=lbl,
-                x=lb["Player"].tolist(),
-                y=lb[col].astype(float).tolist(),
-                marker_color=clr,
-            ))
+        fig2.add_trace(go.Bar(name="Group Stage", x=lb["Player"].tolist(),
+                              y=lb["GroupStagePoints"].astype(float).tolist(),
+                              marker_color="#4A9A7A"))
+        fig2.add_trace(go.Bar(name="Knockout",    x=lb["Player"].tolist(),
+                              y=_ko_vals.tolist(),
+                              marker_color="#105AAC"))
+        fig2.add_trace(go.Bar(name="Captains",    x=lb["Player"].tolist(),
+                              y=lb["CaptainBonus"].astype(float).tolist(),
+                              marker_color=COLORS["gold"]))
+        fig2.add_trace(go.Bar(name="Predictions", x=lb["Player"].tolist(),
+                              y=lb["PredictionBonus"].astype(float).tolist(),
+                              marker_color="#6A5ACD"))
         fig2.update_layout(**PLOTLY_LAYOUT, barmode="stack", height=350, title="Points Breakdown by Source")
         st.plotly_chart(fig2, use_container_width=True)
 
