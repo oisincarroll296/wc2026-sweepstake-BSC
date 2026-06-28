@@ -12,7 +12,6 @@ from src.team_database import load_teams
 # ---------------------------------------------------------------------------
 _ROOT = Path(__file__).parent.parent
 MATCH_STATS_PATH  = _ROOT / "data" / "match_stats.csv"
-PURCHASES_PATH    = _ROOT / "data" / "purchases.csv"
 PLAYER_PICKS_PATH = _ROOT / "data" / "players.csv"
 PLAYER_SUMMARY_PATH = _ROOT / "exports" / "player_summary.csv"
 
@@ -25,7 +24,6 @@ PREDICTION_WINNER_BONUS = 30
 PREDICTION_GOLDEN_BOOT_BONUS = 25
 PREDICTION_RUNNER_UP_BONUS = 20
 PREDICTION_BRONZE_BONUS = 15
-PREDICTION_FIRST_KNOCKED_OUT_BONUS = 20
 
 # Regular match result bonuses
 WIN_BONUS = 3                     # any win (normal time, extra time, or penalties)
@@ -81,10 +79,8 @@ def load_match_stats(path: Optional[Path | str] = None) -> pd.DataFrame:
 
 
 def load_purchases(path: Optional[Path | str] = None) -> pd.DataFrame:
-    p = Path(path) if path else PURCHASES_PATH
-    if not p.exists():
-        return pd.DataFrame(columns=["Player", "PurchaseType", "Selection", "Timestamp"])
-    return pd.read_csv(p, dtype=str).fillna("")
+    from src.competition import load_purchases as _lp
+    return _lp()
 
 
 def load_predictions(path: Optional[Path | str] = None) -> pd.DataFrame:
@@ -92,11 +88,11 @@ def load_predictions(path: Optional[Path | str] = None) -> pd.DataFrame:
     if not p.exists():
         return pd.DataFrame(columns=[
             "Player", "WorldCupWinner", "RunnerUp", "BronzeMedal",
-            "GoldenBoot", "DarkHorse", "FirstKnockedOut",
+            "GoldenBoot", "DarkHorse",
         ])
     df = pd.read_csv(p, dtype=str).fillna("")
     cols = ["Player", "WorldCupWinner", "RunnerUp", "BronzeMedal",
-            "GoldenBoot", "DarkHorse", "FirstKnockedOut"]
+            "GoldenBoot", "DarkHorse"]
     return df[[c for c in cols if c in df.columns]].copy()
 
 
@@ -413,10 +409,9 @@ def calculate_prediction_points(
     """
     result = {
         "world_cup_winner": None, "runner_up": None, "bronze_winner": None,
-        "golden_boot": None, "dark_horse": None, "first_knocked_out": None,
+        "golden_boot": None, "dark_horse": None,
         "winner_bonus": 0.0, "runner_up_bonus": 0.0, "bronze_bonus": 0.0,
         "golden_boot_bonus": 0.0, "dark_horse_bonus": 0.0,
-        "first_knocked_out_bonus": 0.0,
         "total": 0.0,
     }
     if predictions.empty or not tournament_results:
@@ -460,14 +455,6 @@ def calculate_prediction_points(
         result["golden_boot_bonus"] = float(PREDICTION_GOLDEN_BOOT_BONUS)
         result["total"] += result["golden_boot_bonus"]
 
-    # First Knocked Out (+20)
-    predicted_fko = str(pred.get("FirstKnockedOut", "") or "").strip()
-    result["first_knocked_out"] = predicted_fko or None
-    actual_fko = str(tournament_results.get("first_knocked_out", "") or "").strip()
-    if predicted_fko and predicted_fko == actual_fko:
-        result["first_knocked_out_bonus"] = float(PREDICTION_FIRST_KNOCKED_OUT_BONUS)
-        result["total"] += result["first_knocked_out_bonus"]
-
     # Dark Horse — cumulative per qualifying round reached
     predicted_dh = str(pred.get("DarkHorse", "") or "").strip()
     result["dark_horse"] = predicted_dh or None
@@ -495,7 +482,7 @@ def calculate_player_points(
     predictions: pd.DataFrame,
     tournament_results: Optional[dict] = None,
     tier_map: Optional[dict[str, int]] = None,
-    swap_offsets: Optional[pd.DataFrame] = None,
+    swap_offsets: Optional["pd.DataFrame"] = None,
 ) -> dict:
     """Complete points calculation for one player.  No file I/O — all data
     must be passed in.  Use load_* helpers to hydrate arguments from disk.
@@ -521,6 +508,7 @@ def calculate_player_points(
     # Apply team-swap point offsets
     hist_teams: list[str] = []
     if swap_offsets is not None and not swap_offsets.empty:
+        # Teams this player received — deduct the points those teams had at swap time
         received = swap_offsets[swap_offsets["NewOwner"] == player]
         for _, row in received.iterrows():
             team = str(row["Team"])
@@ -536,6 +524,7 @@ def calculate_player_points(
                     "total":       max(0.0, tp["total"]       - gs_d - ko_d - sp_d),
                     "breakdown":   tp.get("breakdown", {}),
                 }
+        # Teams this player gave away — add their pre-swap points back as historical credit
         gave_away = swap_offsets[swap_offsets["OriginalOwner"] == player]
         for _, row in gave_away.iterrows():
             team = str(row["Team"])
@@ -551,8 +540,9 @@ def calculate_player_points(
     gs_total      = sum(team_pts[t]["group_stage"] for t in list(gs_teams) + hist_teams)
     ko_total      = sum(team_pts[t]["knockout"]    for t in list(ko_teams) + hist_teams)
     special_total = sum(team_pts[t]["special"]     for t in list(all_relevant) + hist_teams)
-    base_total    = gs_total + ko_total
+    base_total    = gs_total + ko_total  # match events + progression + upset wins
 
+    # For captain bonus: include historical teams so pre-swap captain credit is preserved
     eff_for_captain = {
         "group_stage": list(gs_teams) + hist_teams,
         "knockout":    list(ko_teams) + hist_teams,
@@ -596,7 +586,7 @@ def calculate_leaderboard(
     captains: pd.DataFrame,
     predictions: pd.DataFrame,
     tournament_results: Optional[dict] = None,
-    swap_offsets: Optional[pd.DataFrame] = None,
+    swap_offsets: Optional["pd.DataFrame"] = None,
 ) -> pd.DataFrame:
     """Full ranked leaderboard for all participants.
 
@@ -614,20 +604,13 @@ def calculate_leaderboard(
             str(row["Team"]): str(row.get("RoundReached", "") or "")
             for _, row in match_stats.iterrows()
         }
-    # Auto-derive first_knocked_out from FirstEliminated flag in match_stats
-    if "first_knocked_out" not in tr and not match_stats.empty:
-        fe_col = "FirstEliminated"
-        if fe_col in match_stats.columns:
-            fe_rows = match_stats[pd.to_numeric(match_stats[fe_col], errors="coerce").fillna(0).astype(int) == 1]
-            if not fe_rows.empty:
-                tr["first_knocked_out"] = str(fe_rows.iloc[0]["Team"])
-
     rows = []
     for player in participants:
         info = calculate_player_points(
             player, assignments, match_stats, purchases,
             captains, predictions, tr, tier_map, swap_offsets=swap_offsets,
         )
+        # Sum per-event breakdown across all this player's teams
         all_teams = list({*info["group_stage_teams"], *info["knockout_teams"]})
         bd: dict[str, float] = {}
         for t in all_teams:
@@ -635,13 +618,16 @@ def calculate_leaderboard(
                 bd[k] = bd.get(k, 0.0) + float(v)
 
         rows.append({
-            "Player":          player,
-            "BasePoints":      info["base_total"],
-            "CaptainBonus":    info["captain"]["total"],
-            "InsuranceBonus":  info["insurance_bonus"],
-            "SpecialBonus":    info["special_bonus"],
-            "PredictionBonus": info["predictions"]["total"],
-            "TotalPoints":     info["grand_total"],
+            "Player":            player,
+            "BasePoints":        info["base_total"],
+            "GroupStagePoints":  info["group_stage_points"],
+            "KnockoutPoints":    info["knockout_points"],
+            "CaptainBonus":      info["captain"]["total"],
+            "InsuranceBonus":    info["insurance_bonus"],
+            "SpecialBonus":      info["special_bonus"],
+            "PredictionBonus":   info["predictions"]["total"],
+            "TotalPoints":       info["grand_total"],
+            # Detailed match-event breakdown
             "GoalsPoints":      bd.get("GroupGoals", 0) + bd.get("KnockoutGoals", 0),
             "CleanSheetPoints": bd.get("GroupCleanSheets", 0) + bd.get("KnockoutCleanSheets", 0),
             "WinPoints":        bd.get("GroupWins", 0) + bd.get("KnockoutWins", 0) + bd.get("GroupWinner", 0),
@@ -794,7 +780,6 @@ def generate_player_summary(
             "BronzeMedalPick":      pred["bronze_winner"] or "",
             "GoldenBootPick":       pred["golden_boot"] or "",
             "DarkHorsePick":        pred["dark_horse"] or "",
-            "FirstKnockedOutPick":  pred["first_knocked_out"] or "",
             "InsuranceStatus":      "Yes" if has_insurance else "No",
             "NinthTeam":            ninth,
             "ResurrectionTeam":     resurrection,

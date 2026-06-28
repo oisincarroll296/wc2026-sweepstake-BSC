@@ -1,7 +1,7 @@
 """Analytics — interactive charts using Plotly."""
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+_p = str(Path(__file__).resolve().parent.parent.parent); sys.path.insert(0, _p) if _p not in sys.path else None
 
 import streamlit as st
 import pandas as pd
@@ -13,6 +13,7 @@ from dashboard.data import (
     get_tier_map, get_team_ownership_data, get_predictions_centre_data,
     get_captains, get_purchases, get_statuses, is_predictions_locked,
     get_remaining_potential, get_remaining_potential_detail,
+    get_r16_potential,
     get_goals_conceded_map, get_score_history,
     get_assignments, get_insurance_overview,
 )
@@ -57,18 +58,22 @@ st.divider()
 
 # ── 2. Points Breakdown Stacked Bar ───────────────────────────────────────
 if not lb.empty:
-    breakdown_cols = ["BasePoints", "CaptainBonus", "InsuranceBonus", "PredictionBonus"]
-    avail = [c for c in breakdown_cols if c in lb.columns]
-    if avail:
+    _breakdown_def = [
+        ("GroupStagePoints", "Group Stage",  "#4A9A7A"),
+        ("KnockoutPoints",   "Knockout",     "#105AAC"),
+        ("CaptainBonus",     "Captains",     COLORS["gold"]),
+        ("PredictionBonus",  "Predictions",  "#6A5ACD"),
+    ]
+    _avail_bd = [(col, lbl, clr) for col, lbl, clr in _breakdown_def if col in lb.columns]
+    if _avail_bd:
         st.subheader("📐 Points Breakdown")
         fig2 = go.Figure()
-        colors_stack = [COLORS["gold"], "#4A9A7A", "#A67C00", "#6A5ACD"]
-        for i, col in enumerate(avail):
+        for col, lbl, clr in _avail_bd:
             fig2.add_trace(go.Bar(
-                name=col.replace("Points", "").replace("Bonus", " Bonus").strip(),
+                name=lbl,
                 x=lb["Player"].tolist(),
                 y=lb[col].astype(float).tolist(),
-                marker_color=colors_stack[i % len(colors_stack)],
+                marker_color=clr,
             ))
         fig2.update_layout(**PLOTLY_LAYOUT, barmode="stack", height=350, title="Points Breakdown by Source")
         st.plotly_chart(fig2, use_container_width=True)
@@ -259,13 +264,19 @@ st.subheader("📈 Points Over Time")
 _ROOT = Path(__file__).parent.parent.parent
 _hist_path = _ROOT / "data" / "score_history.csv"
 
-_MILESTONE_LABELS = {
-    "2026-06-11": "After MD1",
-    "2026-06-18": "After MD2",
-    "2026-06-25": "After MD3",
-    "2026-07-01": "After R32/R16",
-    "2026-07-09": "After QF",
+_MILESTONE_DATES = {
+    "2026-06-11": "MD1",
+    "2026-06-18": "MD2",
+    "2026-06-25": "MD3",
+    "2026-07-01": "R32/R16",
+    "2026-07-09": "QF",
+    "2026-07-14": "SF",
+    "2026-07-19": "Final",
 }
+
+def _fmt_date(d: str) -> str:
+    dt = pd.to_datetime(d)
+    return dt.strftime("%b %d").replace(" 0", " ")
 
 if _hist_path.exists():
     try:
@@ -273,13 +284,31 @@ if _hist_path.exists():
         _hist["Date"] = _hist["Date"].astype(str)
         _players_hist = sorted(_hist["Player"].unique())
 
+        # Forward-fill so every calendar day has a data point (no gaps for rest days)
+        _all_dates = sorted(_hist["Date"].unique())
+        _full_dates = (
+            pd.date_range(_all_dates[0], _all_dates[-1], freq="D")
+            .strftime("%Y-%m-%d").tolist()
+        )
+        _filled = []
+        for _p in _players_hist:
+            _pd0 = _hist[_hist["Player"] == _p][["Date", "Points"]].set_index("Date")
+            _pd0 = _pd0.reindex(_full_dates).ffill().reset_index()
+            _pd0.columns = ["Date", "Points"]
+            _pd0["Player"] = _p
+            _filled.append(_pd0)
+        _hist = pd.concat(_filled, ignore_index=True)
+
+        # Map each raw date → display label ("Jun 11", "Jun 12", …)
+        _date_label = {d: _fmt_date(d) for d in _full_dates}
+
         # Use Plotly qualitative palette — enough colours for 13 players
         _palette = px.colors.qualitative.Light24
         _fig_line = go.Figure()
 
         for _idx, _pl in enumerate(_players_hist):
             _pdata = _hist[_hist["Player"] == _pl].sort_values("Date")
-            _x_labels = [_MILESTONE_LABELS.get(d, d) for d in _pdata["Date"].tolist()]
+            _x_labels = [_date_label.get(d, d) for d in _pdata["Date"].tolist()]
             _fig_line.add_trace(go.Scatter(
                 x=_x_labels,
                 y=_pdata["Points"].tolist(),
@@ -292,15 +321,17 @@ if _hist_path.exists():
 
         _line_layout = {**PLOTLY_LAYOUT}
         _line_layout.update(
-            title="Cumulative Points by Gameweek",
+            title="Cumulative Points Over Time",
             height=420,
-            xaxis_title="Tournament Stage",
+            xaxis_title="Date",
             yaxis_title="Points",
             legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=11), x=1.01, y=1),
         )
         _fig_line.update_layout(**_line_layout)
         st.plotly_chart(_fig_line, use_container_width=True)
-        st.caption("Chart shows cumulative points at each tournament milestone. Updated as results are entered.")
+        _ms_visible = {_fmt_date(d): lbl for d, lbl in _MILESTONE_DATES.items() if _fmt_date(d) in _date_label.values()}
+        _ms_caption = "  ·  ".join(f"{lbl}: {d}" for d, lbl in _ms_visible.items()) if _ms_visible else ""
+        st.caption(f"Cumulative points per player, updated daily.{('  |  ' + _ms_caption) if _ms_caption else ''}")
 
         # ── Rank trajectory ───────────────────────────────────────────────
         st.subheader("📉 Rank Over Time")
@@ -311,7 +342,7 @@ if _hist_path.exists():
             for _r, _row in _snap.iterrows():
                 _rank_rows.append({
                     "Date": _d,
-                    "Label": _MILESTONE_LABELS.get(_d, _d),
+                    "Label": _date_label.get(_d, _d),
                     "Player": _row["Player"],
                     "Rank": _r + 1,
                 })
@@ -331,9 +362,9 @@ if _hist_path.exists():
                 ))
             _rank_layout = {**PLOTLY_LAYOUT}
             _rank_layout.update(
-                title="Rank Position by Gameweek (lower = better)",
+                title="Rank Position Over Time (lower = better)",
                 height=420,
-                xaxis_title="Tournament Stage",
+                xaxis_title="Date",
                 yaxis_title="Position",
                 yaxis=dict(autorange="reversed", dtick=1, gridcolor="#2A3A4A"),
                 legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=11), x=1.01, y=1),
@@ -377,7 +408,7 @@ else:
         ))
         _form_layout = {**PLOTLY_LAYOUT}
         _form_layout.update(
-            title=f"Points Gained — {_MILESTONE_LABELS.get(_latest_gw, _latest_gw)}",
+            title=f"Points Gained — {_MILESTONE_DATES.get(_latest_gw, _fmt_date(_latest_gw) if _latest_gw else '')}",
             height=320,
             yaxis_title="Points Gained",
         )
@@ -434,91 +465,58 @@ if _pot_detail:
         "Minimum remaining is 0 — any alive team can be knocked out next game."
     )
 
-    # ── Breakdown table ──────────────────────────────────────────────────────
-    st.markdown("**Breakdown by surviving team**")
+st.divider()
 
-    _ROUND_LABEL_SHORT = {
-        "": "Not started", "GroupStage": "Group stage",
-        "R16": "Round of 16", "QF": "Quarter-final",
-        "SF": "Semi-final", "Final": "Final", "Winner": "Champion",
-    }
-    _TIER_COLORS_HEX = {1: "#105AAC", 2: "#15803D", 3: "#A16207", 4: "#B91C1C"}
+# ── 8b. R16 Potential ─────────────────────────────────────────────────────
+st.subheader("🎯 Points if All Surviving Teams Reach R16")
+st.caption(
+    "Shows each player's current score (gold) plus the additional progression points "
+    "they would earn if every one of their surviving teams made it to the Round of 16."
+)
+_r16_data = get_r16_potential()
+if _r16_data:
+    _r16_players = sorted(_r16_data.keys(), key=lambda p: -_r16_data[p]["r16_total"])
+    _r16_current = [_r16_data[p]["current_score"] for p in _r16_players]
+    _r16_extra   = [_r16_data[p]["r16_additional"] for p in _r16_players]
+    _r16_totals  = [_r16_data[p]["r16_total"] for p in _r16_players]
 
-    # Rank order from leaderboard for consistent player ordering
-    _lb_order = {p: i for i, p in enumerate(lb["Player"].tolist())} if not lb.empty else {}
-    _breakdown_rows = []
-    for _pl in sorted(_pot_detail.keys(), key=lambda p: _lb_order.get(p, 99)):
-        _info = _pot_detail[_pl]
-        for _t in _info["teams"]:
-            if not _t["alive"]:
-                continue
-            _breakdown_rows.append({
-                "_player":  _pl,
-                "_team":    _t["team"],
-                "_tier":    _t["tier"],
-                "_rnd":     _t["round_reached"],
-                "_max":     _t["max_remaining"],
-                "_goals":   _t.get("goals", 0),
-                "_wins":    _t.get("wins", 0),
-            })
+    _fig_r16 = go.Figure()
+    _fig_r16.add_trace(go.Bar(
+        name="Current Score",
+        x=_r16_players,
+        y=_r16_current,
+        marker_color=COLORS["gold"],
+        hovertemplate="%{x}: %{y:.0f} pts current<extra></extra>",
+    ))
+    _fig_r16.add_trace(go.Bar(
+        name="R16 Progression Bonus",
+        x=_r16_players,
+        y=_r16_extra,
+        marker_color="rgba(34,211,238,0.6)",
+        hovertemplate="%{x}: +%{y:.0f} pts if all reach R16<extra></extra>",
+    ))
+    _r16_layout = {**PLOTLY_LAYOUT}
+    _r16_layout.update(
+        barmode="stack",
+        title="Current Score + R16 Potential (progression bonuses only)",
+        height=360,
+        yaxis_title="Points",
+        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=11), orientation="h", y=-0.15),
+    )
+    _fig_r16.update_layout(**_r16_layout)
+    st.plotly_chart(_fig_r16, use_container_width=True)
 
-    if _breakdown_rows:
-        # Render as styled HTML cards — one row per alive team
-        _html_rows = []
-        _prev_player = None
-        for _br in _breakdown_rows:
-            _pl_label = (
-                f'<td style="color:#D4A017;font-weight:700;font-size:0.78rem;'
-                f'padding:0.3rem 0.5rem;white-space:nowrap">{_br["_player"]}</td>'
-                if _br["_player"] != _prev_player else
-                '<td style="padding:0.3rem 0.5rem"></td>'
-            )
-            _prev_player = _br["_player"]
-            _tc = _TIER_COLORS_HEX.get(_br["_tier"], "#9CA3AF")
-            _rnd_lbl = _ROUND_LABEL_SHORT.get(_br["_rnd"], _br["_rnd"])
-            _max_str = f"+{_br['_max']:.0f}" if _br["_max"] > 0 else "—"
-            _max_col = "#6EE7B7" if _br["_max"] > 0 else "#6B7280"
-            _goals_str = str(_br["_goals"]) if _br["_goals"] else "—"
-            _wins_str  = str(_br["_wins"])  if _br["_wins"]  else "—"
-            _html_rows.append(
-                f'<tr>'
-                f'{_pl_label}'
-                f'<td style="padding:0.3rem 0.5rem">'
-                f'<span style="background:{_tc}22;color:{_tc};border-radius:3px;'
-                f'font-size:0.62rem;font-weight:700;padding:1px 4px;margin-right:4px">T{_br["_tier"]}</span>'
-                f'<span style="color:#F5F5F5;font-size:0.8rem">{_br["_team"]}</span>'
-                f'</td>'
-                f'<td style="color:#9CA3AF;font-size:0.75rem;padding:0.3rem 0.5rem">{_rnd_lbl}</td>'
-                f'<td style="color:#93C5FD;font-size:0.8rem;padding:0.3rem 0.5rem;text-align:right">{_goals_str}</td>'
-                f'<td style="color:#86EFAC;font-size:0.8rem;padding:0.3rem 0.5rem;text-align:right">{_wins_str}</td>'
-                f'<td style="color:{_max_col};font-size:0.8rem;font-weight:700;'
-                f'padding:0.3rem 0.5rem;text-align:right">{_max_str}</td>'
-                f'</tr>'
-            )
-
-        _table_html = (
-            '<table style="width:100%;border-collapse:collapse;background:#131B2A">'
-            '<thead><tr>'
-            '<th style="color:#6B7280;font-size:0.7rem;font-weight:600;padding:0.3rem 0.5rem;'
-            'text-align:left;border-bottom:1px solid #2A3A4A">Player</th>'
-            '<th style="color:#6B7280;font-size:0.7rem;font-weight:600;padding:0.3rem 0.5rem;'
-            'text-align:left;border-bottom:1px solid #2A3A4A">Team</th>'
-            '<th style="color:#6B7280;font-size:0.7rem;font-weight:600;padding:0.3rem 0.5rem;'
-            'text-align:left;border-bottom:1px solid #2A3A4A">Round</th>'
-            '<th style="color:#93C5FD;font-size:0.7rem;font-weight:600;padding:0.3rem 0.5rem;'
-            'text-align:right;border-bottom:1px solid #2A3A4A">Goals</th>'
-            '<th style="color:#86EFAC;font-size:0.7rem;font-weight:600;padding:0.3rem 0.5rem;'
-            'text-align:right;border-bottom:1px solid #2A3A4A">Wins</th>'
-            '<th style="color:#6EE7B7;font-size:0.7rem;font-weight:600;padding:0.3rem 0.5rem;'
-            'text-align:right;border-bottom:1px solid #2A3A4A">Max Remaining</th>'
-            '</tr></thead>'
-            '<tbody>' + "".join(_html_rows) + '</tbody>'
-            '</table>'
-        )
-        st.markdown(_table_html, unsafe_allow_html=True)
-        st.caption("Goals and Wins are totals so far. Max remaining = progression bonuses if this team wins the tournament from here.")
-    else:
-        st.info("No surviving teams yet — breakdown appears once the knockout stage begins.")
+    # Table summary
+    _r16_rows = [
+        {
+            "Player": p,
+            "Current": f"{_r16_data[p]['current_score']:.0f}",
+            "+ If All Reach R16": f"+{_r16_data[p]['r16_additional']:.0f}",
+            "Total": f"{_r16_data[p]['r16_total']:.0f}",
+        }
+        for p in _r16_players
+    ]
+    st.dataframe(pd.DataFrame(_r16_rows), use_container_width=True, hide_index=True)
 
 st.divider()
 
