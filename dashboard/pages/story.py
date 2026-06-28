@@ -326,6 +326,28 @@ def _build_story_context(date_from: date | None = None, date_to: date | None = N
         for _, r in upcoming_owned.iterrows()
     ]
 
+    # ── Slim the context to keep token count manageable ──────────────────────
+    # Only include matches that have something notable; summarise the rest
+    notable_matches = [m for m in match_narratives if m.get("notable_events")]
+    # Also include high-scoring matches not already captured
+    high_score = [
+        m for m in match_narratives
+        if m not in notable_matches
+        and sum(int(x) for x in m.get("score","0–0").replace("–","-").split("-") if x.isdigit()) >= 5
+    ]
+    notable_matches = (notable_matches + high_score)[:20]
+    other_n = len(match_narratives) - len(notable_matches)
+
+    # Slim standings: drop verbose teams/predictions lists
+    slim_standings = [
+        {k: v for k, v in s.items() if k in ("rank","player","paid","total_pts","captain")}
+        for s in standings
+    ]
+    slim_unpaid = [
+        {k: v for k, v in s.items() if k in ("rank","player","paid","total_pts")}
+        for s in unpaid_top
+    ]
+
     return {
         "sweepstake_info": (
             f"{n_players} friends, each owning teams across 4 FIFA tiers. "
@@ -340,15 +362,17 @@ def _build_story_context(date_from: date | None = None, date_to: date | None = N
         "goals_in_period":      total_goals,
         "avg_goals_per_game":   round(total_goals/n_matches,2) if n_matches else 0,
         "prize_pool":           prize_pool,
-        "current_standings":    standings,
-        "unpaid_players_in_top_half": unpaid_top,
-        "match_results":        match_narratives,
-        "upsets":               upsets,
+        "current_standings":    slim_standings,
+        "unpaid_players_in_top_half": slim_unpaid,
+        "match_results":        notable_matches,
+        "other_matches_no_events": other_n,
+        "upsets":               upsets[:10],
         "hat_tricks":           hat_tricks,
         "special_events":       special_events,
-        "top_scoring_teams":    top_teams,
-        "featured_teams":       sorted(featured_teams),
-        "upcoming_owned_fixtures": upcoming_fixtures,
+        "top_scoring_teams":    [{k: v for k, v in t.items() if k != "owners"} for t in top_teams[:8]],
+        "featured_teams":       sorted(featured_teams)[:8],
+        "upcoming_owned_fixtures": upcoming_fixtures[:6],
+        "ownership_summary":    {t: owners for t, owners in ownership.items() if owners},
     }
 
 
@@ -441,7 +465,9 @@ RULES:
         except Exception as _e:
             last_err = _e
             _e_str = str(_e).lower()
-            if "429" in str(_e) or "rate_limit" in _e_str or "decommissioned" in _e_str:
+            if ("429" in str(_e) or "413" in str(_e)
+                    or "rate_limit" in _e_str or "decommissioned" in _e_str
+                    or "too large" in _e_str or "tokens" in _e_str):
                 continue
             raise
     if raw is None:
