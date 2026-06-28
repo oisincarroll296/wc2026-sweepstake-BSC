@@ -61,18 +61,18 @@ if not lb.empty:
     _req_cols = {"GroupStagePoints", "KnockoutPoints", "CaptainBonus", "PredictionBonus"}
     if _req_cols.issubset(lb.columns):
         st.subheader("📐 Points Breakdown")
-        # Knockout segment absorbs InsuranceBonus + SpecialBonus so the stack = TotalPoints
-        _ko_vals = (
-            lb["KnockoutPoints"].astype(float)
-            + lb.get("InsuranceBonus", 0).astype(float)
-            + lb.get("SpecialBonus", 0).astype(float)
+        # Group Stage absorbs InsuranceBonus + SpecialBonus so the stack = TotalPoints
+        _gs_vals = (
+            lb["GroupStagePoints"].astype(float)
+            + lb["InsuranceBonus"].astype(float)
+            + lb["SpecialBonus"].astype(float)
         )
         fig2 = go.Figure()
         fig2.add_trace(go.Bar(name="Group Stage", x=lb["Player"].tolist(),
-                              y=lb["GroupStagePoints"].astype(float).tolist(),
+                              y=_gs_vals.tolist(),
                               marker_color="#4A9A7A"))
         fig2.add_trace(go.Bar(name="Knockout",    x=lb["Player"].tolist(),
-                              y=_ko_vals.tolist(),
+                              y=lb["KnockoutPoints"].astype(float).tolist(),
                               marker_color="#105AAC"))
         fig2.add_trace(go.Bar(name="Captains",    x=lb["Player"].tolist(),
                               y=lb["CaptainBonus"].astype(float).tolist(),
