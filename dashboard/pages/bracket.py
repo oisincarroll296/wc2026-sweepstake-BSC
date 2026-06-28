@@ -39,10 +39,10 @@ for _player, _teams_list in assignments.items():
 TIER_LABELS = {1: "Tier 1", 2: "Tier 2", 3: "Tier 3", 4: "Tier 4"}
 
 # ── Bracket constants ─────────────────────────────────────────────────────────
-CARD_H   = 110     # px: height of one match card
+CARD_H   = 126     # px: height of one match card
 CARD_W   = 210     # px: width (wide enough for full owner names)
-BASE     = 134     # px: one R32 slot (card + gap)
-TOTAL_H  = 16 * BASE          # 2144 px total bracket height
+BASE     = 150     # px: one R32 slot (card + gap)
+TOTAL_H  = 16 * BASE          # 2400 px total bracket height
 COL_W    = CARD_W + 16        # column width
 CONN_W   = 52                 # px: connector column width between rounds
 LINE_CLR = "#5aa34f"
