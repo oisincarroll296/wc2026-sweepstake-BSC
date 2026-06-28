@@ -5,12 +5,14 @@ page switches don't re-hit the filesystem on every render.  Admin actions
 call st.cache_data.clear() to force a refresh after writes.
 """
 import sys
+import os
 from pathlib import Path
 
-# Ensure project root is on sys.path regardless of working directory
-_ROOT = Path(__file__).parent.parent
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
+# Ensure project root is on sys.path regardless of working directory or case
+_ROOT = Path(__file__).resolve().parent.parent
+_ROOT_STR = str(_ROOT)
+if not any(os.path.normcase(p) == os.path.normcase(_ROOT_STR) for p in sys.path):
+    sys.path.insert(0, _ROOT_STR)
 
 import streamlit as st
 import pandas as pd
@@ -19,11 +21,15 @@ from src.team_database  import load_teams
 from src.scoring_engine import load_match_stats, load_predictions, load_captains
 from src.competition    import (
     load_player_status, load_purchases, load_events, load_audit_log,
-    load_swap_offsets,
-    calculate_prize_pool,
+    load_swaps, load_swap_offsets,
     prize_leaderboard, overall_leaderboard,
-    get_team_ownership, get_predictions_centre,
+    get_team_ownership, get_predictions_centre, PRICES,
 )
+
+_PURCHASE_FLAG_COLS = [
+    "BuyIn", "PredictionPack", "Mulligan", "CompleteRedraw",
+    "NinthTeam", "Resurrection", "Insurance",
+]
 from src.event_engine      import load_allocation
 
 
@@ -40,20 +46,8 @@ def get_match_stats() -> pd.DataFrame:
 
 
 @st.cache_data(ttl=30)
-def _purchases_cached() -> pd.DataFrame:
-    return load_purchases()
-
-
 def get_purchases() -> pd.DataFrame:
-    """Return purchases, bypassing a stale empty cache if the file has content."""
-    df = _purchases_cached()
-    if df.empty:
-        path = _ROOT / "data" / "purchases.csv"
-        if path.exists() and path.stat().st_size > 100:
-            # Cache served empty despite file having content — re-read directly.
-            _purchases_cached.clear()
-            return load_purchases()
-    return df
+    return load_purchases()
 
 
 @st.cache_data(ttl=30)
@@ -87,47 +81,60 @@ def get_assignments() -> dict[str, list[str]]:
 
 
 @st.cache_data(ttl=30)
+def get_swaps() -> pd.DataFrame:
+    return load_swaps()
+
+
+@st.cache_data(ttl=30)
 def get_swap_offsets() -> pd.DataFrame:
     return load_swap_offsets()
 
 
 # ── Derived loaders ─────────────────────────────────────────────────────────
 
+_PRIZE_SHARES = (0.50, 0.30, 0.20)
+
+
+@st.cache_data(ttl=30)
+def get_prize_pool() -> dict:
+    # Implemented directly here so it is immune to stale in-memory competition.py.
+    # Prize pool = sum of Budget values from players.csv.
+    statuses = load_player_status()
+    if statuses.empty or "Budget" not in statuses.columns:
+        total = 0.0
+    else:
+        total = float(pd.to_numeric(statuses["Budget"], errors="coerce").fillna(0.0).sum())
+    return {
+        "current_pot":  round(total, 2),
+        "first_prize":  round(total * _PRIZE_SHARES[0], 2),
+        "second_prize": round(total * _PRIZE_SHARES[1], 2),
+        "third_prize":  round(total * _PRIZE_SHARES[2], 2),
+    }
+
+
 @st.cache_data(ttl=30)
 def get_player_budgets() -> pd.DataFrame:
     """Per-player budget summary: Budget, Spent, Available."""
-    from src.competition import PRICES as _PRICES
     statuses = load_player_status()
-    purchases = load_purchases()
     if statuses.empty:
         return pd.DataFrame(columns=["Player", "Budget", "Spent", "Available"])
     rows = []
     for _, row in statuses.iterrows():
         player = str(row["Player"])
         budget = float(pd.to_numeric(row.get("Budget", 0), errors="coerce") or 0.0)
-        if purchases.empty:
-            spent = 0.0
-        else:
-            p_p = purchases[purchases["Player"] == player]
-            spent = float(p_p["PurchaseType"].map(_PRICES).fillna(0.0).sum())
-        rows.append({"Player": player, "Budget": budget, "Spent": spent, "Available": round(budget - spent, 2)})
+        # Auto-rule: Budget >= 5 implies BuyIn purchased
+        spent = sum(
+            PRICES.get(col, 0.0)
+            for col in _PURCHASE_FLAG_COLS
+            if str(row.get(col, "0")).strip() in ("1", "True", "true")
+        )
+        rows.append({
+            "Player":    player,
+            "Budget":    budget,
+            "Spent":     spent,
+            "Available": round(budget - spent, 2),
+        })
     return pd.DataFrame(rows)
-
-
-@st.cache_data(ttl=30)
-def get_prize_pool() -> dict:
-    _players = load_player_status()
-    total = 0.0
-    if not _players.empty and "Budget" in _players.columns:
-        import pandas as _pd
-        total = float(_pd.to_numeric(_players["Budget"], errors="coerce").fillna(0).sum())
-    _shares = [0.50, 0.30, 0.20]
-    return {
-        "current_pot":  total,
-        "first_prize":  round(total * _shares[0], 2),
-        "second_prize": round(total * _shares[1], 2),
-        "third_prize":  round(total * _shares[2], 2),
-    }
 
 
 @st.cache_data(ttl=30)
@@ -456,6 +463,13 @@ def save_match_result_and_recalculate(
     _snapshot_score_history()
     st.cache_data.clear()
 
+    from dashboard.github_sync import push_file as _pf
+    try:
+        _pf(results_path, "data/match_results.csv", f"Results: match {match_number}")
+        _pf(_ROOT / "data" / "match_stats.csv", "data/match_stats.csv", f"Stats: match {match_number}")
+    except Exception as _e:
+        st.warning(f"⚠️ GitHub sync: {_e}")
+
 
 def _recalculate_match_stats() -> None:
     """Rebuild Goals + CleanSheets + PenaltyWins + ComebackWins from match_results.csv."""
@@ -484,7 +498,7 @@ def _recalculate_match_stats() -> None:
         if col not in ms.columns:
             ms[col] = 0
 
-    # Zero out all auto-derived stat columns (manual columns are NOT zeroed)
+    # Zero out all auto-derived stat columns (special events now also derived from match_results)
     for col in ["GroupGoals", "GroupCleanSheets", "GroupPenaltyWins", "GroupComebackWins",
                 "GroupWins",
                 "KnockoutGoals", "KnockoutCleanSheets", "KnockoutPenaltyWins", "KnockoutComebackWins",
@@ -492,7 +506,7 @@ def _recalculate_match_stats() -> None:
                 "GroupUpsetWins1", "GroupUpsetWins2", "GroupUpsetWins3",
                 "KnockoutUpsetWins1", "KnockoutUpsetWins2", "KnockoutUpsetWins3",
                 "GroupHatTricks", "KnockoutHatTricks",
-                "RedCards", "ShirtRemovals", "GKGoals", "FirstEliminated"]:
+                "ShirtRemovals", "GKGoals", "RedCards", "FirstEliminated"]:
         if col in ms.columns:
             ms[col] = 0
 
@@ -590,18 +604,18 @@ def _recalculate_match_stats() -> None:
                 if mask.any():
                     ms.loc[mask, upset_col] = ms.loc[mask, upset_col].astype(int) + 1
 
-        # Special events aggregated per match from match_results.csv
+        # Special events — aggregated per match from match_results.csv
         ht_col = f"{pfx}HatTricks"
         for team, side in [(home, "home"), (away, "away")]:
             mask = ms["Team"] == team
             if not mask.any():
                 continue
-            ms.loc[mask, ht_col]          = ms.loc[mask, ht_col].astype(int)          + _int(res.get(f"{side}_hat_tricks", 0))
+            ms.loc[mask, ht_col] = ms.loc[mask, ht_col].astype(int) + _int(res.get(f"{side}_hat_tricks", 0))
             ms.loc[mask, "RedCards"]      = ms.loc[mask, "RedCards"].astype(int)      + _int(res.get(f"{side}_red_cards", 0))
             ms.loc[mask, "ShirtRemovals"] = ms.loc[mask, "ShirtRemovals"].astype(int) + _int(res.get(f"{side}_shirt_off", 0))
             ms.loc[mask, "GKGoals"]       = ms.loc[mask, "GKGoals"].astype(int)       + _int(res.get(f"{side}_gk_goals", 0))
             if _int(res.get(f"{side}_first_eliminated", 0)):
-                ms["FirstEliminated"] = 0
+                ms["FirstEliminated"] = 0          # clear any previous flag
                 ms.loc[mask, "FirstEliminated"] = 1
 
     ms.to_csv(_ROOT / "data" / "match_stats.csv", index=False)
@@ -635,6 +649,76 @@ def get_remaining_potential() -> dict[str, float]:
     """Max additional progression points each player could earn from still-surviving teams."""
     detail = get_remaining_potential_detail()
     return {p: d["max_potential"] for p, d in detail.items()}
+
+
+@st.cache_data(ttl=30)
+def get_r16_potential() -> dict[str, dict]:
+    """Per-player points if all surviving (non-eliminated) teams reach R16.
+
+    Returns { player: {current_score, r16_additional, r16_total} }.
+    'Surviving' = RoundReached not in {GroupStage, R32} (eliminated rounds).
+    For teams still in groups (no round yet): awards R32+R16 progression bonuses.
+    For teams already past R16: 0 additional from R16 target.
+    """
+    from src.scoring_engine import PROGRESSION_BONUSES, ROUND_ORDER, KNOCKOUT_ROUNDS
+    from src.competition import purchases_to_scoring_format
+    from src.scoring_engine import get_effective_teams
+
+    assignments = get_assignments()
+    match_stats = get_match_stats()
+    tier_map    = get_tier_map()
+    lb          = get_overall_leaderboard()
+    purchases   = get_purchases()
+
+    score_map: dict[str, float] = {}
+    if not lb.empty and "TotalPoints" in lb.columns:
+        score_map = dict(zip(lb["Player"], lb["TotalPoints"].astype(float)))
+
+    scoring_purch = purchases_to_scoring_format(purchases) if not purchases.empty else pd.DataFrame(
+        columns=["Player", "PurchaseType", "Selection", "Timestamp"]
+    )
+
+    ELIMINATED = {"GroupStage", "R32"}
+    R16_TARGET = "R16"
+    r16_idx = ROUND_ORDER.index(R16_TARGET)
+
+    result: dict = {}
+    for player, _ in assignments.items():
+        current_score = score_map.get(player, 0.0)
+        eff = get_effective_teams(player, assignments, scoring_purch)
+        all_teams = list(set(eff["group_stage"]) | set(eff["knockout"]))
+
+        r16_additional = 0.0
+        for team in all_teams:
+            tier = tier_map.get(team, 1)
+            bonuses = PROGRESSION_BONUSES.get(tier, {})
+            rnd = ""
+            if not match_stats.empty:
+                row = match_stats[match_stats["Team"] == team]
+                if not row.empty:
+                    rnd = str(row.iloc[0].get("RoundReached", "") or "").strip()
+
+            if rnd in ELIMINATED:
+                continue  # already knocked out
+            if rnd in ROUND_ORDER and ROUND_ORDER.index(rnd) >= r16_idx:
+                continue  # already at or past R16
+
+            # Calculate progression bonuses from current position up to R16
+            current_idx = ROUND_ORDER.index(rnd) if rnd in ROUND_ORDER else -1
+            team_r16 = sum(
+                float(bonuses.get(ko_rnd, 0))
+                for ko_rnd in KNOCKOUT_ROUNDS
+                if ROUND_ORDER.index(ko_rnd) > current_idx
+                and ROUND_ORDER.index(ko_rnd) <= r16_idx
+            )
+            r16_additional += team_r16
+
+        result[player] = {
+            "current_score":  current_score,
+            "r16_additional": r16_additional,
+            "r16_total":      current_score + r16_additional,
+        }
+    return result
 
 
 @st.cache_data(ttl=30)
@@ -823,7 +907,7 @@ def get_insurance_overview() -> dict:
             row = match_stats[match_stats["Team"] == team]
             if not row.empty:
                 rnd = str(row.iloc[0].get("RoundReached", "") or "").strip()
-        eliminated = rnd == "GroupStage"
+        eliminated = rnd in {"GroupStage", "R32"}
         owners = [p for p, ts in assignments.items() if team in ts]
         t1_status.append({
             "team":         team,
@@ -841,7 +925,7 @@ def get_insurance_overview() -> dict:
             elim_count = 0
             for t in t1_teams:
                 entry = next((x for x in t1_status if x["team"] == t), None)
-                if entry and entry["eliminated"]:
+                if entry and entry["eliminated"]:  # eliminated = GroupStage or R32
                     elim_count += 1
             holders.append({
                 "player":          player,
