@@ -82,12 +82,25 @@ special_bonus = result.get("special_bonus", 0.0)
 pred_info     = result.get("predictions", {})
 pred_total    = pred_info.get("total", 0.0)
 
+# Compute group stage / knockout split from per-team points
+_team_pts_all = result.get("team_points", {})
+group_stage_pts = sum(v.get("group_stage", 0) for v in _team_pts_all.values())
+knockout_pts    = sum(v.get("knockout", 0)     for v in _team_pts_all.values())
+
 # ── Score strip ────────────────────────────────────────────────────────────
 paid_icon = "✅" if status_val == "PAID" else "⚠️"
 has_ins = not purchases.empty and not purchases[
     (purchases["Player"] == player) &
     (purchases["PurchaseType"] == "Insurance")
 ].empty
+
+def _strip_box(label, value, color="#F5F5F5", prefix=""):
+    return (
+        f'<div style="background:#0D1B2A;border-radius:6px;padding:0.35rem 0.7rem;text-align:center">'
+        f'<div style="color:#9CA3AF;font-size:0.68rem">{label}</div>'
+        f'<div style="color:{color};font-weight:700;font-size:1.05rem">{prefix}{value:.0f}</div></div>'
+    )
+
 st.markdown(
     f'<div style="background:#1E2937;border:1px solid #2A3A4A;border-radius:10px;'
     f'padding:0.75rem 1rem;margin-bottom:0.75rem;display:flex;flex-wrap:wrap;gap:0.75rem;'
@@ -95,22 +108,11 @@ st.markdown(
     f'<div><span style="color:#9CA3AF;font-size:0.75rem">TOTAL</span>'
     f'<div style="color:#D4A017;font-size:2rem;font-weight:800;line-height:1">{grand_total:.0f}</div></div>'
     f'<div style="display:flex;flex-wrap:wrap;gap:0.6rem">'
-    f'<div style="background:#0D1B2A;border-radius:6px;padding:0.35rem 0.7rem;text-align:center">'
-    f'<div style="color:#9CA3AF;font-size:0.68rem">TEAM PTS</div>'
-    f'<div style="color:#F5F5F5;font-weight:700;font-size:1.05rem">{base_total:.0f}</div></div>'
-    f'<div style="background:#0D1B2A;border-radius:6px;padding:0.35rem 0.7rem;text-align:center">'
-    f'<div style="color:#9CA3AF;font-size:0.68rem">CAPTAIN</div>'
-    f'<div style="color:#6EE7B7;font-weight:700;font-size:1.05rem">+{captain_bonus:.1f}</div></div>'
-    f'<div style="background:#0D1B2A;border-radius:6px;padding:0.35rem 0.7rem;text-align:center">'
-    f'<div style="color:#9CA3AF;font-size:0.68rem">INSURANCE</div>'
-    f'<div style="color:{"#6EE7B7" if insurance_pts > 0 else ("#D4A017" if has_ins else "#9CA3AF")};font-weight:700;font-size:1.05rem">+{insurance_pts:.0f}</div></div>'
-    f'<div style="background:#0D1B2A;border-radius:6px;padding:0.35rem 0.7rem;text-align:center">'
-    f'<div style="color:#9CA3AF;font-size:0.68rem">SPECIAL</div>'
-    f'<div style="color:{"#6EE7B7" if special_bonus > 0 else ("#F87171" if special_bonus < 0 else "#9CA3AF")};font-weight:700;font-size:1.05rem">{special_bonus:+.0f}</div></div>'
-    f'<div style="background:#0D1B2A;border-radius:6px;padding:0.35rem 0.7rem;text-align:center">'
-    f'<div style="color:#9CA3AF;font-size:0.68rem">PREDICTIONS</div>'
-    f'<div style="color:{"#6EE7B7" if pred_total > 0 else "#9CA3AF"};font-weight:700;font-size:1.05rem">+{pred_total:.0f}</div></div>'
-    f'</div>'
+    + _strip_box("GROUP STAGE", group_stage_pts)
+    + _strip_box("KNOCKOUT", knockout_pts)
+    + _strip_box("CAPTAIN", captain_bonus, color="#6EE7B7", prefix="+")
+    + _strip_box("PREDICTIONS", pred_total, color="#6EE7B7" if pred_total > 0 else "#9CA3AF", prefix="+")
+    + f'</div>'
     f'<span style="color:#9CA3AF;font-size:0.82rem">{paid_icon} {status_val}</span>'
     f'</div>',
     unsafe_allow_html=True,
@@ -398,71 +400,50 @@ with col_extras:
 
     st.divider()
 
-    # ── Insurance Breakdown ────────────────────────────────────────────────
-    st.subheader("🛡️ Insurance")
-    if has_ins:
-        orig_teams = assignments.get(player, [])
-        t1_teams   = [t for t in orig_teams if tier_map.get(t, 0) == 1]
-        _events    = get_events()
-        _gs_closed = (
-            not _events.empty
-            and "GROUP_STAGE_CLOSE" in _events[_events["Status"] == "EXECUTED"]["EventType"].values
-        )
+    # ── Ninth Team ────────────────────────────────────────────────────────
+    st.subheader("9️⃣ Ninth Team")
+    # KO-only teams (not in group stage roster) = ninth team / resurrection
+    extra_ko_teams = [t for t in eff["knockout"] if t not in eff["group_stage"]]
+    # Also check purchases Selection for explicitly-recorded ninth team
+    _ninth_sel = _sel("NinthTeam")
+    if _ninth_sel and _ninth_sel != "—" and _ninth_sel not in extra_ko_teams:
+        extra_ko_teams = [_ninth_sel] + extra_ko_teams
 
-        # Rule explainer
-        st.markdown(
-            '<div style="background:#1A2535;border:1px solid #2A3A4A;border-radius:6px;'
-            'padding:0.4rem 0.7rem;margin-bottom:0.5rem;font-size:0.78rem;color:#9CA3AF">'
-            '🛡️ <strong style="color:#F5F5F5">+25 pts</strong> per Tier 1 team eliminated '
-            'before the Round of 16 &nbsp;·&nbsp; max <strong style="color:#D4A017">+50 pts</strong> '
-            'if both go out in the groups</div>',
-            unsafe_allow_html=True,
-        )
-
-        elim_count = 0
-        for t1 in t1_teams:
-            t1_rnd = _round_reached(t1)
-            is_out = t1_rnd == "GroupStage"
-            if is_out:
-                elim_count += 1
-            if is_out:
-                icon, badge, bdr, bg = "🔴", "Eliminated in Groups → +25 pts", "#6EE7B7", "rgba(110,231,183,0.08)"
-            elif t1_rnd in ("R16","QF","SF","Final","Winner"):
-                icon, badge, bdr, bg = "🟢", f"Survived ({ROUND_LABELS.get(t1_rnd, t1_rnd)}) — no bonus", "#9CA3AF", "rgba(0,0,0,0)"
-            else:
-                icon, badge, bdr, bg = "⏳", "Group stage in progress", "#D4A017", "rgba(0,0,0,0)"
+    if extra_ko_teams:
+        for _nt in extra_ko_teams:
+            _nt_tier    = tier_map.get(_nt, 1)
+            _nt_col     = TIER_COLORS.get(_nt_tier, "#9CA3AF")
+            _nt_tp      = stored_team_pts.get(_nt, {})
+            _nt_ko_pts  = _nt_tp.get("knockout", 0)
+            _nt_gs_pts  = _nt_tp.get("group_stage", 0)
+            _nt_total   = _nt_tp.get("total", 0)
+            _nt_rnd     = _round_reached(_nt)
+            _nt_status  = ROUND_LABELS.get(_nt_rnd, "🟢 Active")
+            _nt_elim    = _is_eliminated(_nt_rnd)
+            _nt_op      = "0.5" if _nt_elim else "1"
             st.markdown(
-                f'<div style="background:{bg};border:1px solid #2A3A4A;border-radius:6px;'
-                f'padding:0.4rem 0.75rem;margin-bottom:0.3rem;display:flex;justify-content:space-between;align-items:center">'
-                f'<div><span style="color:#F5F5F5;font-weight:600">{icon} {t1}</span>'
-                f'<div style="color:{bdr};font-size:0.7rem;margin-top:2px">{badge}</div></div>'
-                f'<div style="color:{"#6EE7B7" if is_out else "#9CA3AF"};font-weight:700;font-size:1rem">'
-                f'{"+" + str(25) if is_out else "—"}</div>'
+                f'<div style="background:#1E2937;border-left:4px solid {_nt_col};border-radius:0 6px 6px 0;'
+                f'padding:0.5rem 0.75rem;margin-bottom:0.3rem;opacity:{_nt_op}">'
+                f'<div style="display:flex;justify-content:space-between;align-items:flex-start">'
+                f'<div>'
+                f'<span style="color:{_nt_col};font-size:0.65rem;font-weight:700;background:{_nt_col}22;'
+                f'border-radius:3px;padding:0 4px;margin-right:0.3rem">T{_nt_tier}</span>'
+                f'<span style="color:#F5F5F5;font-weight:700;font-size:0.95rem">{_nt}</span>'
+                f'<div style="color:#9CA3AF;font-size:0.7rem;margin-top:0.1rem">KO only · {_nt_status}</div>'
+                f'</div>'
+                f'<div style="text-align:right">'
+                f'<div style="color:#D4A017;font-weight:700;font-size:1.1rem">{_nt_total:.0f} pts</div>'
+                f'<div style="color:#9CA3AF;font-size:0.7rem">Grp {_nt_gs_pts:.0f} · KO {_nt_ko_pts:.0f}</div>'
+                f'</div>'
+                f'</div>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
-
-        # Summary card
-        max_bonus  = len(t1_teams) * 25
-        earned_col = "#6EE7B7" if insurance_pts > 0 else "#9CA3AF"
-        if insurance_pts > 0:
-            summary = f"+{insurance_pts:.0f} pts earned ({elim_count} of {len(t1_teams)} T1 teams out)"
-        elif _gs_closed:
-            summary = f"No bonus — {len(t1_teams)} Tier 1 team(s) all survived the group stage"
-        else:
-            summary = f"No bonus yet — {len(t1_teams) - elim_count} T1 team(s) still in groups (max +{max_bonus})"
-        st.markdown(
-            f'<div class="card-gold" style="display:flex;justify-content:space-between;align-items:center">'
-            f'<span style="color:{earned_col};font-size:0.82rem">{summary}</span>'
-            f'<span style="color:{earned_col};font-weight:700;font-size:1.15rem">+{insurance_pts:.0f}</span>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
     else:
         st.markdown(
             '<div class="card" style="display:flex;justify-content:space-between;align-items:center">'
-            '<span style="color:#9CA3AF">No insurance purchased</span>'
-            '<span style="color:#6B7280;font-size:0.75rem">€2 — up to +50 pts</span></div>',
+            '<span style="color:#9CA3AF">No ninth team purchased</span>'
+            '<span style="color:#6B7280;font-size:0.75rem">€3 — adds a KO-only team</span></div>',
             unsafe_allow_html=True,
         )
 
@@ -507,21 +488,6 @@ with col_extras:
             unsafe_allow_html=True,
         )
 
-    # Ninth / Resurrection
-    ninth = _sel("NinthTeam")
-    resur = _sel("Resurrection")
-    if ninth != "—" or resur != "—":
-        st.divider()
-        st.subheader("🎰 Extra Teams")
-        for label, val in [("Ninth Team", ninth), ("Resurrection", resur)]:
-            if val != "—":
-                st.markdown(
-                    f'<div class="card" style="display:flex;justify-content:space-between;padding:0.4rem 0.75rem">'
-                    f'<span style="color:#9CA3AF;font-size:0.82rem">{label}</span>'
-                    f'<span style="color:#F5F5F5;font-weight:600">{val}</span></div>',
-                    unsafe_allow_html=True,
-                )
-
     st.divider()
 
     # ── Predictions Breakdown ──────────────────────────────────────────────
@@ -535,16 +501,14 @@ with col_extras:
             pp_ru     = str(pred_row.get("RunnerUp",       "") or "").strip() or "—"
             pp_bronze = str(pred_row.get("BronzeMedal",    "") or "").strip() or "—"
             pp_golden = str(pred_row.get("GoldenBoot",     "") or "").strip() or "—"
-            pp_fko    = str(pred_row.get("FirstKnockedOut","") or "").strip() or "—"
             pp_dark   = str(pred_row.get("DarkHorse",      "") or "").strip() or "—"
         else:
-            pp_winner = pp_ru = pp_bronze = pp_golden = pp_fko = pp_dark = "—"
+            pp_winner = pp_ru = pp_bronze = pp_golden = pp_dark = "—"
 
         winner_bonus = pred_info.get("winner_bonus", 0.0)
         ru_bonus     = pred_info.get("runner_up_bonus", 0.0)
         bz_bonus     = pred_info.get("bronze_bonus", 0.0)
         gb_bonus     = pred_info.get("golden_boot_bonus", 0.0)
-        fko_bonus    = pred_info.get("first_knocked_out_bonus", 0.0)
         dh_bonus     = pred_info.get("dark_horse_bonus", 0.0)
 
         # Dark horse current round
@@ -554,13 +518,12 @@ with col_extras:
 
         DARK_HORSE_NEXT = {"": "QF (+15)", "QF": "SF (+30)", "SF": "Final (+40)", "Final": "Win (+50)"}
 
-        # Fixed predictions (winner, runner-up, bronze, golden boot, first KO)
+        # Fixed predictions (winner, runner-up, bronze, golden boot)
         for label, pick, earned, max_pts in [
             ("World Cup Winner", pp_winner, winner_bonus, 30),
             ("Runner-Up",        pp_ru,     ru_bonus,     20),
             ("Bronze Medal",     pp_bronze, bz_bonus,     15),
             ("Golden Boot",      pp_golden, gb_bonus,     25),
-            ("First Knocked Out",pp_fko,    fko_bonus,    20),
         ]:
             col_pts = "#6EE7B7" if earned > 0 else "#9CA3AF"
             status  = f"+{earned:.0f} ✓" if earned > 0 else f"0 / {max_pts}"
