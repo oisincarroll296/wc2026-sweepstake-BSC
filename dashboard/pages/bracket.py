@@ -134,7 +134,7 @@ def _team_ref(raw: str, winner_of: dict, loser_of: dict) -> tuple[str, str]:
         mn = int(s.split()[-1])
         if mn in winner_of:
             t = winner_of[mn]
-            return t, FLAGS.get(t, "🏳")
+            return t, "🏳"
         if 73 <= mn <= 88:    label = f"W-32-{mn - 72}"
         elif 89 <= mn <= 96:  label = f"W-16-{mn - 88}"
         elif 97 <= mn <= 100: label = f"W-QF-{mn - 96}"
@@ -144,11 +144,11 @@ def _team_ref(raw: str, winner_of: dict, loser_of: dict) -> tuple[str, str]:
         mn = int(s.split()[-1])
         if mn in loser_of:
             t = loser_of[mn]
-            return t, FLAGS.get(t, "🏳")
+            return t, "🏳"
         if 101 <= mn <= 102: label = f"L-SF-{mn - 100}"
         else:                 label = f"L{mn}"
         return label, "○"
-    return s, FLAGS.get(s, "🏳")
+    return s, "🏳"
 
 
 def _build_matches(fixtures_df, results_df) -> dict[int, MatchInfo]:
