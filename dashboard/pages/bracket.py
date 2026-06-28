@@ -1,9 +1,11 @@
-"""Tournament Bracket — group draw + full knockout bracket with match cards."""
+"""Tournament Bracket — FIFA-style knockout bracket + group stage draw."""
 import sys
 from pathlib import Path
-_p = str(Path(__file__).resolve().parent.parent.parent); sys.path.insert(0, _p) if _p not in sys.path else None
+_p = str(Path(__file__).resolve().parent.parent.parent)
+sys.path.insert(0, _p) if _p not in sys.path else None
 
 from datetime import datetime
+from dataclasses import dataclass, field
 
 import streamlit as st
 
@@ -12,276 +14,474 @@ from dashboard.data import (
     get_fixtures, get_match_results,
 )
 from dashboard.config import TIER_COLORS
-from dashboard.components.ui import page_header, empty_state
+from dashboard.components.ui import empty_state
 
-page_header("🏟️ Tournament Bracket", "Group draw · Full knockout bracket")
+# ── Page heading ──────────────────────────────────────────────────────────────
+st.markdown(
+    '<h1 style="font-family:system-ui,-apple-system,sans-serif;font-size:1.75rem;'
+    'font-weight:800;color:#0f172a;margin-bottom:0.1rem">FIFA World Cup Schedule</h1>',
+    unsafe_allow_html=True,
+)
 
-match_stats  = get_match_stats()
-assignments  = get_assignments()
-tier_map     = get_tier_map()
-teams_df     = get_teams()
-fixtures_df  = get_fixtures()
-results_df   = get_match_results()
+# ── Shared data ───────────────────────────────────────────────────────────────
+match_stats = get_match_stats()
+assignments = get_assignments()
+tier_map    = get_tier_map()
+teams_df    = get_teams()
+fixtures_df = get_fixtures()
+results_df  = get_match_results()
 
-# ── Shared lookups ─────────────────────────────────────────────────────────────
 _owner_map: dict[str, list[str]] = {}
-for player, teams_list in assignments.items():
-    for team in teams_list:
-        _owner_map.setdefault(team, []).append(player)
+for _player, _teams_list in assignments.items():
+    for _t in _teams_list:
+        _owner_map.setdefault(_t, []).append(_player)
 
 TIER_LABELS = {1: "Tier 1", 2: "Tier 2", 3: "Tier 3", 4: "Tier 4"}
 
-# Tier colour legend
-_leg = st.columns(4)
-for i, (tier, label) in enumerate(TIER_LABELS.items()):
-    clr = TIER_COLORS.get(tier, "#9CA3AF")
-    with _leg[i]:
-        st.markdown(
-            f'<span style="background:{clr};color:#fff;border-radius:4px;'
-            f'padding:3px 10px;font-size:0.75rem;font-weight:700">{label}</span>',
-            unsafe_allow_html=True,
-        )
+# ── Bracket constants ─────────────────────────────────────────────────────────
+CARD_H   = 86      # px: height of one match card
+CARD_W   = 180     # px: width of one match card
+BASE     = 108     # px: one R32 slot (card + gap)
+TOTAL_H  = 16 * BASE          # 1728 px total bracket height
+COL_W    = CARD_W + 20        # 200 px: column width
+CONN_W   = 55                 # px: connector column width between rounds
+LINE_CLR = "#5aa34f"
 
-st.divider()
+# Visual order of match numbers in each round (top to bottom in the bracket)
+BRACKET_SLOTS: list[list[int]] = [
+    [74, 77, 73, 75, 83, 84, 81, 82, 76, 78, 79, 80, 86, 88, 85, 87],
+    [89, 90, 93, 94, 91, 92, 95, 96],
+    [97, 98, 99, 100],
+    [101, 102],
+    [104],
+]
+ROUND_LABELS = ["Last 32", "Last 16", "Quarter-finals", "Semi-finals", "Final"]
+DAY_ABBR     = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
 
-# ── Knockout data structures ───────────────────────────────────────────────────
-fixtures_by_num: dict[int, dict] = {
-    int(r["match_number"]): r.to_dict()
-    for _, r in fixtures_df.iterrows()
+FLAGS: dict[str, str] = {
+    "Germany": "🇩🇪",       "Paraguay": "🇵🇾",     "France": "🇫🇷",
+    "Sweden": "🇸🇪",        "South Africa": "🇿🇦",  "Canada": "🇨🇦",
+    "Netherlands": "🇳🇱",  "Morocco": "🇲🇦",       "Portugal": "🇵🇹",
+    "Croatia": "🇭🇷",       "Spain": "🇪🇸",         "Austria": "🇦🇹",
+    "Switzerland": "🇨🇭",  "Algeria": "🇩🇿",       "Argentina": "🇦🇷",
+    "Cabo Verde": "🇨🇻",   "Colombia": "🇨🇴",       "Ghana": "🇬🇭",
+    "Australia": "🇦🇺",    "Egypt": "🇪🇬",          "USA": "🇺🇸",
+    "Bosnia and Herzegovina": "🇧🇦",               "Belgium": "🇧🇪",
+    "Senegal": "🇸🇳",       "Brazil": "🇧🇷",         "Japan": "🇯🇵",
+    "England": "🏴󠁧󠁢󠁥󠁮󠁧󠁿",   "Congo DR": "🇨🇩",     "Mexico": "🇲🇽",
+    "Ecuador": "🇪🇨",       "Cote d Ivoire": "🇨🇮",  "Norway": "🇳🇴",
+    "Morocco": "🇲🇦",       "Uruguay": "🇺🇾",        "Scotland": "🏴󠁧󠁢󠁳󠁣󠁴󠁿",
 }
-ko_fixtures: dict[int, dict] = {
-    mn: f for mn, f in fixtures_by_num.items() if mn >= 73
-}
-
-# Build winner / loser / score maps from results
-winner_of: dict[int, str] = {}
-loser_of:  dict[int, str] = {}
-result_scores: dict[int, tuple] = {}   # mn -> (hg, ag, penalty_winner_or_None)
-
-for _, res in results_df.iterrows():
-    mn = int(res["match_number"])
-    if mn < 73:
-        continue
-    fix = ko_fixtures.get(mn)
-    if fix is None:
-        continue
-    home = str(fix["home_team"])
-    away = str(fix["away_team"])
-    hg   = int(res["home_goals"])
-    ag   = int(res["away_goals"])
-    pw   = res.get("penalty_winner", "")
-    pw   = str(pw) if pw and str(pw) not in ("nan", "None", "") else None
-
-    result_scores[mn] = (hg, ag, pw)
-
-    if pw == home:
-        winner_of[mn], loser_of[mn] = home, away
-    elif pw == away:
-        winner_of[mn], loser_of[mn] = away, home
-    elif hg > ag:
-        winner_of[mn], loser_of[mn] = home, away
-    elif ag > hg:
-        winner_of[mn], loser_of[mn] = away, home
 
 
-def _resolve(ref: str) -> tuple[str | None, str]:
-    """Return (actual_team_or_None, display_label).
+# ── Data model ────────────────────────────────────────────────────────────────
+@dataclass
+class MatchInfo:
+    match_number: int
+    team1:   str
+    flag1:   str
+    team2:   str
+    flag2:   str
+    status:  str      # "Scheduled" | "Completed"
+    day:     str
+    time_str: str
+    date_str: str
+    venue:   str
+    winner:  str = ""
+    score1:  str = ""
+    score2:  str = ""
 
-    actual_team is non-None only when the team name is fully resolved.
-    display_label is e.g. 'Germany', 'W74', 'L101'.
-    """
-    ref = str(ref or "").strip()
-    if not ref or ref in ("nan", "None"):
-        return None, "TBD"
-    if ref.startswith("Winner match "):
-        mn = int(ref.split()[-1])
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+def _parse_date(s: str) -> datetime | None:
+    s = str(s).strip()
+    try:
+        return datetime.strptime(s, "%d/%m/%Y")
+    except ValueError:
+        pass
+    try:
+        return datetime.strptime(s[:10], "%Y-%m-%d")
+    except Exception:
+        return None
+
+
+def _fmt_date(s: str) -> tuple[str, str]:
+    d = _parse_date(s)
+    if not d:
+        return "—", "—"
+    return DAY_ABBR[d.weekday()], f"{d.day} {d.strftime('%b').upper()}"
+
+
+def _team_ref(raw: str, winner_of: dict, loser_of: dict) -> tuple[str, str]:
+    """Resolve 'Winner match X' → real team name + flag, or placeholder label + '○'."""
+    s = str(raw or "").strip()
+    if not s or s in ("nan", "None"):
+        return "TBD", "○"
+    if s.startswith("Winner match "):
+        mn = int(s.split()[-1])
         if mn in winner_of:
             t = winner_of[mn]
-            return t, t
-        return None, f"W{mn}"
-    if ref.startswith("Runner-up match "):
-        mn = int(ref.split()[-1])
+            return t, FLAGS.get(t, "🏳")
+        if 73 <= mn <= 88:    label = f"W-32-{mn - 72}"
+        elif 89 <= mn <= 96:  label = f"W-16-{mn - 88}"
+        elif 97 <= mn <= 100: label = f"W-QF-{mn - 96}"
+        else:                  label = f"W{mn}"
+        return label, "○"
+    if s.startswith("Runner-up match "):
+        mn = int(s.split()[-1])
         if mn in loser_of:
             t = loser_of[mn]
-            return t, t
-        return None, f"L{mn}"
-    return ref, ref  # already a real team name
+            return t, FLAGS.get(t, "🏳")
+        if 101 <= mn <= 102: label = f"L-SF-{mn - 100}"
+        else:                 label = f"L{mn}"
+        return label, "○"
+    return s, FLAGS.get(s, "🏳")
 
 
-def _fmt_date(date_str: str) -> str:
-    try:
-        d = datetime.strptime(str(date_str)[:10], "%Y-%m-%d")
-        day = d.strftime("%d").lstrip("0") or "0"
-        return f"{day} {d.strftime('%b')}"
-    except Exception:
-        return str(date_str)
+def _build_matches(fixtures_df, results_df) -> dict[int, MatchInfo]:
+    result_rows: dict[int, object] = {}
+    for _, r in results_df.iterrows():
+        mn = int(r["match_number"])
+        if mn >= 73:
+            result_rows[mn] = r
+
+    winner_of: dict[int, str] = {}
+    loser_of:  dict[int, str] = {}
+    for mn, r in result_rows.items():
+        fix_r = fixtures_df[fixtures_df["match_number"] == mn]
+        if fix_r.empty:
+            continue
+        fix  = fix_r.iloc[0]
+        home = str(fix["home_team"])
+        away = str(fix["away_team"])
+        hg   = int(r["home_goals"])
+        ag   = int(r["away_goals"])
+        pw   = str(r.get("penalty_winner", "") or "")
+        pw   = pw if pw not in ("nan", "None", "") else None
+        if pw == home or (not pw and hg > ag):
+            winner_of[mn], loser_of[mn] = home, away
+        elif pw == away or (not pw and ag > hg):
+            winner_of[mn], loser_of[mn] = away, home
+
+    out: dict[int, MatchInfo] = {}
+    for _, fix in fixtures_df.iterrows():
+        mn = int(fix["match_number"])
+        if mn < 73:
+            continue
+
+        team1, flag1 = _team_ref(str(fix["home_team"]), winner_of, loser_of)
+        team2, flag2 = _team_ref(str(fix["away_team"]), winner_of, loser_of)
+        day, date    = _fmt_date(str(fix.get("match_date", "")))
+        time_        = str(fix.get("kickoff_time", "00:00"))[:5]
+        venue        = str(fix.get("venue", "")).strip()
+        if venue in ("nan", "None", ""):
+            venue = "TBD"
+        venue = (venue.replace(" Stadium", "")
+                      .replace("New York New Jersey", "NY/NJ")
+                      .replace("San Francisco Bay Area", "SF Bay Area")
+                      .replace("BC Place Vancouver", "Vancouver"))
+
+        status = "Completed" if mn in result_rows else "Scheduled"
+        s1 = s2 = ""
+        if mn in result_rows:
+            r  = result_rows[mn]
+            s1 = str(int(r["home_goals"]))
+            s2 = str(int(r["away_goals"]))
+
+        out[mn] = MatchInfo(
+            match_number=mn, team1=team1, flag1=flag1,
+            team2=team2, flag2=flag2, status=status,
+            day=day, time_str=time_, date_str=date, venue=venue,
+            winner=winner_of.get(mn, ""), score1=s1, score2=s2,
+        )
+    return out
 
 
-def _team_slot(team: str | None, label: str, won: bool, played: bool) -> str:
-    if team:
-        tier   = tier_map.get(team, 1)
-        bg     = TIER_COLORS.get(tier, "#1E2937")
-        owners = _owner_map.get(team, [])
-        owner_txt = " · ".join(owners) if owners else "—"
-        op = "1" if (not played or won) else "0.35"
+# ── Match card renderer ───────────────────────────────────────────────────────
+def _card_html(m: MatchInfo | None) -> str:
+    if m is None:
         return (
-            f'<div style="background:{bg}22;border-left:3px solid {bg};border-radius:4px;'
-            f'padding:0.3rem 0.55rem;margin:0.12rem 0;opacity:{op}">'
-            f'<div style="color:#F1F5F9;font-weight:700;font-size:0.8rem">{team}</div>'
-            f'<div style="color:#94A3B8;font-size:0.58rem">{owner_txt}</div>'
+            f'<div style="width:{CARD_W}px;height:{CARD_H}px;'
+            f'background:#e5e7eb;border-radius:6px;opacity:0.3"></div>'
+        )
+
+    is_ph1    = m.flag1 == "○"
+    is_ph2    = m.flag2 == "○"
+    completed = m.status == "Completed"
+    stat_col  = "#5aa34f" if not completed else "#94a3b8"
+
+    def _row(name, flag, is_ph, won):
+        if is_ph:
+            return (
+                f'<div style="display:flex;align-items:center;gap:4px;'
+                f'height:20px;padding:1px 0">'
+                f'<span style="color:#d1d5db;font-size:10px">○</span>'
+                f'<span style="color:#9ca3af;font-size:10.5px">{name}</span>'
+                f'</div>'
+            )
+        op = "1" if (not completed or won) else "0.32"
+        fw = "700" if won else "500"
+        nm = (name[:21] + "…") if len(name) > 21 else name
+        return (
+            f'<div style="display:flex;align-items:center;gap:4px;'
+            f'height:20px;padding:1px 0;opacity:{op}">'
+            f'<span style="font-size:13px;line-height:1">{flag}</span>'
+            f'<span style="color:#111;font-weight:{fw};font-size:11px;'
+            f'white-space:nowrap">{nm}</span>'
             f'</div>'
         )
-    return (
-        f'<div style="background:#111827;border-left:3px solid #374151;border-radius:4px;'
-        f'padding:0.3rem 0.55rem;margin:0.12rem 0">'
-        f'<div style="color:#4B5563;font-size:0.8rem">{label}</div>'
-        f'</div>'
-    )
 
+    if completed and m.score1 and m.score2:
+        sep = (
+            f'<div style="text-align:center;font-weight:700;font-size:11.5px;'
+            f'color:#111;border-top:1px solid #f0f0f0;border-bottom:1px solid #f0f0f0;'
+            f'padding:1px 0;margin:1px 0">{m.score1} – {m.score2}</div>'
+        )
+    else:
+        sep = '<div style="height:1px;background:#f0f0f0;margin:2px 0"></div>'
 
-def _match_card(mn: int) -> str:
-    fix = ko_fixtures.get(mn)
-    if fix is None:
-        return ""
+    venue_s = (m.venue[:25] + "…") if len(m.venue) > 25 else m.venue
+    owners1 = _owner_map.get(m.team1, [])
+    owners2 = _owner_map.get(m.team2, [])
 
-    home_team, home_label = _resolve(str(fix["home_team"]))
-    away_team, away_label = _resolve(str(fix["away_team"]))
-    date_label = _fmt_date(str(fix.get("match_date", "")))
-
-    played = mn in result_scores
-    home_won = away_won = False
-    mid_html = '<div style="text-align:center;color:#374151;font-size:0.68rem;margin:0.12rem 0">vs</div>'
-
-    if played:
-        hg, ag, pw = result_scores[mn]
-        home_won = winner_of.get(mn) == home_team
-        away_won = winner_of.get(mn) == away_team
-        score_label = f"{hg} – {ag}"
-        suffix = " <span style='font-size:0.58rem;color:#94A3B8'>(pens)</span>" if pw else ""
-        mid_html = (
-            f'<div style="text-align:center;color:#D4A017;font-weight:700;'
-            f'font-size:0.82rem;margin:0.12rem 0">{score_label}{suffix}</div>'
+    def _owner_tag(owners):
+        if not owners:
+            return ""
+        txt = "·".join(owners)
+        return (
+            f'<span style="color:#6366f1;font-size:8px;'
+            f'background:rgba(99,102,241,0.10);border-radius:3px;'
+            f'padding:0 3px;margin-left:3px">{txt}</span>'
         )
 
     return (
-        f'<div style="border:1px solid #1E3A5F;border-radius:6px;padding:0.5rem 0.6rem;'
-        f'background:#0D1B2A;margin-bottom:0.45rem">'
-        f'<div style="color:#4B5563;font-size:0.6rem;margin-bottom:0.28rem">'
-        f'Match {mn} &nbsp;·&nbsp; {date_label}</div>'
-        f'{_team_slot(home_team, home_label, home_won, played)}'
-        f'{mid_html}'
-        f'{_team_slot(away_team, away_label, away_won, played)}'
+        f'<div style="width:{CARD_W}px;height:{CARD_H}px;background:white;'
+        f'border-radius:6px;box-shadow:0 1px 5px rgba(0,0,0,0.10);'
+        f'padding:5px 8px;font-family:system-ui,-apple-system,sans-serif;'
+        f'box-sizing:border-box;overflow:hidden">'
+        # ── Header: status left, day/time/date right
+        f'<div style="display:flex;justify-content:space-between;'
+        f'align-items:flex-start;margin-bottom:2px">'
+        f'<span style="color:{stat_col};font-size:7px;font-weight:700;'
+        f'text-transform:uppercase;letter-spacing:0.4px">{m.status}</span>'
+        f'<div style="text-align:right;line-height:1.2">'
+        f'<div style="color:#6b7280;font-size:7.5px;font-weight:700">{m.day}</div>'
+        f'<div style="color:#111;font-size:11px;font-weight:700">{m.time_str}</div>'
+        f'<div style="color:#6b7280;font-size:7.5px">{m.date_str}</div>'
+        f'</div></div>'
+        # ── Teams
+        + _row(m.team1, m.flag1, is_ph1, m.winner == m.team1)
+        + sep
+        + _row(m.team2, m.flag2, is_ph2, m.winner == m.team2)
+        # ── Venue
+        + f'<div style="color:#9ca3af;font-size:7px;margin-top:2px;'
+        f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'
+        f'Venue: {venue_s}</div>'
         f'</div>'
     )
 
 
-def _team_card(team: str, compact: bool = False) -> str:
-    tier   = tier_map.get(team, 1)
-    bg     = TIER_COLORS.get(tier, "#1E2937")
-    owners = _owner_map.get(team, [])
-    owner_txt = "  ·  ".join(owners) if owners else "—"
-    pad = "0.3rem 0.6rem" if compact else "0.4rem 0.7rem"
+# ── Bracket HTML builder ──────────────────────────────────────────────────────
+def _bracket_html(all_matches: dict[int, MatchInfo]) -> str:
+    n_rounds = len(BRACKET_SLOTS)
+    pad_top  = 28
+    total_w  = n_rounds * COL_W + (n_rounds - 1) * CONN_W + 8
+
+    parts = [
+        f'<div style="overflow-x:auto;background:#f8f9fb;border-radius:10px;'
+        f'padding:{pad_top + 8}px 16px 24px;font-family:system-ui,sans-serif">'
+        f'<div style="position:relative;height:{TOTAL_H + pad_top}px;'
+        f'width:{total_w}px;min-width:{total_w}px">'
+    ]
+
+    for ri, (round_label, mn_list) in enumerate(zip(ROUND_LABELS, BRACKET_SLOTS)):
+        n       = len(mn_list)
+        slot_h  = BASE * (2 ** ri)
+        col_x   = ri * (COL_W + CONN_W)
+
+        # Round label
+        parts.append(
+            f'<div style="position:absolute;top:0;left:{col_x}px;'
+            f'width:{COL_W}px;text-align:center;color:#374151;font-size:11px;'
+            f'font-weight:700;letter-spacing:0.3px;text-transform:uppercase">'
+            f'{round_label}</div>'
+        )
+
+        for si, mn in enumerate(mn_list):
+            m        = all_matches.get(mn)
+            card_top = pad_top + si * slot_h + (slot_h - CARD_H) // 2
+
+            parts.append(
+                f'<div style="position:absolute;top:{card_top}px;left:{col_x}px">'
+                + _card_html(m)
+                + '</div>'
+            )
+
+            # Connector: drawn for even si (top of each pair)
+            if ri < n_rounds - 1 and si % 2 == 0 and si + 1 < n:
+                cy_top  = pad_top + si * slot_h + slot_h // 2
+                cy_bot  = pad_top + (si + 1) * slot_h + slot_h // 2
+                mid_y   = (cy_top + cy_bot) // 2
+
+                arm_x   = col_x + CARD_W
+                junc_x  = arm_x + CONN_W // 2
+                reach_x = col_x + COL_W + CONN_W
+
+                parts += [
+                    # Top horizontal arm
+                    f'<div style="position:absolute;top:{cy_top - 1}px;left:{arm_x}px;'
+                    f'width:{junc_x - arm_x}px;height:2px;background:{LINE_CLR}"></div>',
+                    # Bottom horizontal arm
+                    f'<div style="position:absolute;top:{cy_bot - 1}px;left:{arm_x}px;'
+                    f'width:{junc_x - arm_x}px;height:2px;background:{LINE_CLR}"></div>',
+                    # Vertical joining line
+                    f'<div style="position:absolute;top:{cy_top}px;left:{junc_x - 1}px;'
+                    f'width:2px;height:{cy_bot - cy_top}px;background:{LINE_CLR}"></div>',
+                    # Horizontal arm to next column
+                    f'<div style="position:absolute;top:{mid_y - 1}px;left:{junc_x - 1}px;'
+                    f'width:{reach_x - junc_x + 1}px;height:2px;background:{LINE_CLR}"></div>',
+                ]
+
+    parts.append('</div></div>')
+    return ''.join(parts)
+
+
+# ── 3rd Place card ────────────────────────────────────────────────────────────
+def _third_place_html(all_matches: dict[int, MatchInfo]) -> str:
+    m = all_matches.get(103)
+    if not m:
+        return ""
     return (
-        f'<div style="background:{bg}22;border-left:4px solid {bg};border-radius:4px;'
-        f'padding:{pad};margin-bottom:0.3rem">'
-        f'<div style="color:#F1F5F9;font-weight:700;font-size:{"0.82rem" if compact else "0.9rem"}">{team}</div>'
-        f'<div style="color:#94A3B8;font-size:0.62rem;margin-top:1px">{owner_txt}</div>'
-        f'</div>'
+        f'<div style="background:#f8f9fb;border-radius:10px;'
+        f'padding:12px 16px;font-family:system-ui,sans-serif">'
+        f'<div style="color:#374151;font-size:11px;font-weight:700;'
+        f'text-transform:uppercase;letter-spacing:0.3px;margin-bottom:8px">'
+        f'3rd Place Playoff</div>'
+        + _card_html(m)
+        + '</div>'
     )
 
 
-def _elim_wrap(card_html: str) -> str:
-    return (
-        '<div style="position:relative;opacity:0.55">'
-        f'{card_html}'
-        '<div style="position:absolute;top:0;left:0;right:0;bottom:0;display:flex;'
-        'align-items:center;justify-content:flex-end;padding-right:0.5rem;pointer-events:none">'
-        '<span style="color:#EF4444;font-size:2rem;font-weight:900;line-height:1;opacity:0.9">X</span>'
-        '</div>'
-        '</div>'
-    )
-
-
-# ── Check whether group stage is done ─────────────────────────────────────────
-_group_stage_done = False
-if not match_stats.empty:
-    elim_count = (match_stats["RoundReached"] == "GroupStage").sum()
-    _group_stage_done = elim_count >= 16
-
-_any_ko = bool(ko_fixtures) and _group_stage_done
-
-# ── Bracket structure: (label, match_numbers, columns) ────────────────────────
-KO_STRUCTURE = [
-    ("Round of 32",       list(range(73, 89)),   4),
-    ("Round of 16",       list(range(89, 97)),   4),
-    ("Quarter-Finals",    list(range(97, 101)),  4),
-    ("Semi-Finals",       list(range(101, 103)), 2),
-    ("3rd Place Playoff", [103],                 1),
-    ("Final",             [104],                 1),
-]
-
-tab_group, tab_ko = st.tabs(["Group Stage Draw", "Knockout Bracket"])
+# ── Tabs ──────────────────────────────────────────────────────────────────────
+tab_ko, tab_group = st.tabs(["Knockout Stage", "Group Stage Draw"])
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 1 — GROUP STAGE DRAW
+# KNOCKOUT STAGE
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_ko:
+    _group_done = (
+        not match_stats.empty
+        and (match_stats["RoundReached"] == "GroupStage").sum() >= 16
+    )
+
+    all_matches = _build_matches(fixtures_df, results_df)
+
+    if not all_matches:
+        empty_state("Fixture data not available.")
+    elif not _group_done:
+        st.info(
+            "The knockout bracket will appear once the group stage is complete "
+            "and all 32 qualifiers are known.",
+            icon="🏟️",
+        )
+        # Still show R32 if fixtures are populated
+        _r32_populated = any(
+            not str(fixtures_df.loc[fixtures_df["match_number"] == mn, "home_team"].values[0]
+                    if mn in fixtures_df["match_number"].values else "").startswith("Winner")
+            for mn in range(73, 89)
+        )
+        if _r32_populated:
+            st.markdown("**Round of 32 — known fixtures:**")
+            st.markdown(_bracket_html(all_matches), unsafe_allow_html=True)
+    else:
+        st.markdown(_bracket_html(all_matches), unsafe_allow_html=True)
+
+        # 3rd place
+        _3p = _third_place_html(all_matches)
+        if _3p:
+            col_3p, _ = st.columns([1, 3])
+            with col_3p:
+                st.markdown(_3p, unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GROUP STAGE DRAW
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_group:
+    # Tier colour legend
+    _leg = st.columns(4)
+    for _i, (_tier, _label) in enumerate(TIER_LABELS.items()):
+        _clr = TIER_COLORS.get(_tier, "#9CA3AF")
+        with _leg[_i]:
+            st.markdown(
+                f'<span style="background:{_clr};color:#fff;border-radius:4px;'
+                f'padding:3px 10px;font-size:0.75rem;font-weight:700">{_label}</span>',
+                unsafe_allow_html=True,
+            )
+    st.markdown("---")
+
+    ROUND_STATUS_LABELS = {
+        "GroupStage": "Eliminated (Groups)",
+        "R16": "Eliminated (R16)", "QF": "Eliminated (QF)",
+        "SF": "Eliminated (SF)", "Final": "Runner-up", "Winner": "Champion",
+    }
+
+    def _team_card_gs(team: str, compact: bool = False) -> str:
+        _tier  = tier_map.get(team, 1)
+        _bg    = TIER_COLORS.get(_tier, "#1E2937")
+        _owners = _owner_map.get(team, [])
+        _owner_txt = "  ·  ".join(_owners) if _owners else "—"
+        _pad = "0.3rem 0.6rem" if compact else "0.4rem 0.7rem"
+        return (
+            f'<div style="background:{_bg}22;border-left:4px solid {_bg};border-radius:4px;'
+            f'padding:{_pad};margin-bottom:0.3rem">'
+            f'<div style="color:#F1F5F9;font-weight:700;font-size:{"0.82rem" if compact else "0.9rem"}">'
+            f'{team}</div>'
+            f'<div style="color:#94A3B8;font-size:0.62rem;margin-top:1px">{_owner_txt}</div>'
+            f'</div>'
+        )
+
+    def _elim_wrap(card_html: str) -> str:
+        return (
+            '<div style="position:relative;opacity:0.55">'
+            + card_html
+            + '<div style="position:absolute;top:0;left:0;right:0;bottom:0;display:flex;'
+            'align-items:center;justify-content:flex-end;padding-right:0.5rem;pointer-events:none">'
+            '<span style="color:#EF4444;font-size:2rem;font-weight:900;line-height:1;opacity:0.9">✕</span>'
+            '</div></div>'
+        )
+
     if teams_df.empty:
         empty_state("No team data available.")
     else:
-        groups: dict[str, list] = {}
-        for _, row in teams_df.iterrows():
-            g = str(row.get("Group", "")).strip()
-            if g and g.lower() not in ("nan", ""):
-                groups.setdefault(g, []).append(row)
+        _groups: dict[str, list] = {}
+        for _, _row in teams_df.iterrows():
+            _g = str(_row.get("Group", "")).strip()
+            if _g and _g.lower() not in ("nan", ""):
+                _groups.setdefault(_g, []).append(_row)
 
-        if not groups:
+        if not _groups:
             empty_state("Group assignments not available yet.")
         else:
-            group_letters = sorted(groups.keys())
-            for row_start in range(0, len(group_letters), 3):
-                cols = st.columns(3)
-                for ci, g in enumerate(group_letters[row_start:row_start + 3]):
-                    with cols[ci]:
+            _gl = sorted(_groups.keys())
+            for _rs in range(0, len(_gl), 3):
+                _cols = st.columns(3)
+                for _ci, _g in enumerate(_gl[_rs:_rs + 3]):
+                    with _cols[_ci]:
                         st.markdown(
                             f'<div style="color:#D4A017;font-weight:700;font-size:0.95rem;'
                             f'border-bottom:1px solid #2A3A4A;padding-bottom:0.2rem;'
-                            f'margin-bottom:0.4rem">Group {g}</div>',
+                            f'margin-bottom:0.4rem">Group {_g}</div>',
                             unsafe_allow_html=True,
                         )
-                        team_rows = sorted(groups[g], key=lambda r: int(r.get("Tier", 4)))
-                        for r in team_rows:
-                            team = str(r["Team"])
-                            rnd = ""
+                        _team_rows = sorted(_groups[_g], key=lambda r: int(r.get("Tier", 4)))
+                        for _tr in _team_rows:
+                            _team = str(_tr["Team"])
+                            _rnd = ""
                             if not match_stats.empty:
-                                ms_row = match_stats[match_stats["Team"] == team]
-                                if not ms_row.empty:
-                                    rnd = str(ms_row.iloc[0].get("RoundReached", "") or "").strip()
-                            card = _team_card(team, compact=True)
-                            if rnd == "GroupStage":
-                                card = _elim_wrap(card)
-                            st.markdown(card, unsafe_allow_html=True)
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 2 — KNOCKOUT BRACKET
-# ══════════════════════════════════════════════════════════════════════════════
-with tab_ko:
-    if not _any_ko:
-        st.info("Knockout bracket will populate once the group stage is complete.")
-    else:
-        for round_label, match_nums, n_cols in KO_STRUCTURE:
-            st.markdown(f"### {round_label}")
-
-            if n_cols == 1:
-                _, mid_col, _ = st.columns([1, 2, 1])
-                with mid_col:
-                    st.markdown(_match_card(match_nums[0]), unsafe_allow_html=True)
-            else:
-                rows = [match_nums[i : i + n_cols] for i in range(0, len(match_nums), n_cols)]
-                for row_mns in rows:
-                    cols = st.columns(n_cols)
-                    for ci, mn in enumerate(row_mns):
-                        with cols[ci]:
-                            st.markdown(_match_card(mn), unsafe_allow_html=True)
-
-            st.markdown("")
+                                _ms = match_stats[match_stats["Team"] == _team]
+                                if not _ms.empty:
+                                    _rnd = str(_ms.iloc[0].get("RoundReached", "") or "").strip()
+                            _card = _team_card_gs(_team, compact=True)
+                            if _rnd == "GroupStage":
+                                _card = _elim_wrap(_card)
+                            st.markdown(_card, unsafe_allow_html=True)
