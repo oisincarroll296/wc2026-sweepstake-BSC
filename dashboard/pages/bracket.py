@@ -39,10 +39,10 @@ for _player, _teams_list in assignments.items():
 TIER_LABELS = {1: "Tier 1", 2: "Tier 2", 3: "Tier 3", 4: "Tier 4"}
 
 # ── Bracket constants ─────────────────────────────────────────────────────────
-CARD_H   = 126     # px: height of one match card
+CARD_H   = 130     # px: height of one match card
 CARD_W   = 210     # px: width (wide enough for full owner names)
-BASE     = 150     # px: one R32 slot (card + gap)
-TOTAL_H  = 16 * BASE          # 2400 px total bracket height
+BASE     = 154     # px: one R32 slot (card + gap)
+TOTAL_H  = 16 * BASE          # 2464 px total bracket height
 COL_W    = CARD_W + 16        # column width
 CONN_W   = 52                 # px: connector column width between rounds
 LINE_CLR = "#5aa34f"
@@ -294,16 +294,10 @@ def _card_html(m: MatchInfo | None) -> str:
         f'border-radius:6px;box-shadow:0 2px 6px rgba(0,0,0,0.10);'
         f'padding:5px 7px;font-family:system-ui,-apple-system,sans-serif;'
         f'box-sizing:border-box;overflow:hidden">'
-        # ── Header row: status | day/time/date
-        f'<div style="display:flex;justify-content:space-between;'
-        f'align-items:flex-start;margin-bottom:3px">'
-        f'<span style="color:{stat_col};font-size:7px;font-weight:700;'
-        f'text-transform:uppercase;letter-spacing:0.5px">{m.status}</span>'
-        f'<div style="text-align:right;line-height:1.25">'
-        f'<div style="color:#6b7280;font-size:7.5px;font-weight:700">{m.day}</div>'
-        f'<div style="color:#111;font-size:11px;font-weight:700">{m.time_str}</div>'
-        f'<div style="color:#6b7280;font-size:7.5px">{m.date_str}</div>'
-        f'</div></div>'
+        # ── Header row: day · time · date (single line)
+        f'<div style="text-align:center;font-size:8px;font-weight:600;'
+        f'color:#374151;margin-bottom:4px;white-space:nowrap;letter-spacing:0.3px">'
+        f'{m.day} · {m.time_str} · {m.date_str}</div>'
         # ── Team rows
         + _row(m.team1, is_ph1, m.winner == m.team1, tcol1, tier1, owners1)
         + sep
