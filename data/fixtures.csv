@@ -71,22 +71,22 @@ match_number,match_date,kickoff_time,group,home_team,away_team,venue
 70,28/06/2026,03:00,J,Jordan,Argentina,Dallas Stadium
 71,28/06/2026,00:30,K,Colombia,Portugal,Miami Stadium
 72,28/06/2026,00:30,K,Congo DR,Uzbekistan,Atlanta Stadium
-73,28/06/2026,20:00,,2A,2B,Los Angeles Stadium
-74,29/06/2026,21:30,,1E,3ABCDF,Boston Stadium
-75,30/06/2026,02:00,,1F,2C,Monterrey Stadium
-76,29/06/2026,18:00,,1C,2F,Houston Stadium
-77,30/06/2026,22:00,,1I,3CDFGH,New York New Jersey Stadium
-78,30/06/2026,18:00,,2E,2I,Dallas Stadium
-79,01/07/2026,02:00,,1A,3CEFHI,Mexico City Stadium
-80,01/07/2026,17:00,,1L,3EHIJK,Atlanta Stadium
-81,02/07/2026,01:00,,1D,3BEFIJ,San Francisco Bay Area Stadium
-82,01/07/2026,21:00,,1G,3AEHIJ,Seattle Stadium
-83,03/07/2026,00:00,,2K,2L,Toronto Stadium
-84,02/07/2026,20:00,,1H,2J,Los Angeles Stadium
-85,03/07/2026,04:00,,1B,3EFGIJ,BC Place Vancouver
-86,03/07/2026,23:00,,1J,2H,Miami Stadium
-87,04/07/2026,02:30,,1K,3DEIJL,Kansas City Stadium
-88,03/07/2026,19:00,,2D,2G,Dallas Stadium
+73,28/06/2026,20:00,,South Africa,Canada,Los Angeles Stadium
+74,29/06/2026,21:30,,Germany,Paraguay,Boston Stadium
+75,30/06/2026,02:00,,Netherlands,Morocco,Monterrey Stadium
+76,29/06/2026,18:00,,Brazil,Japan,Houston Stadium
+77,30/06/2026,22:00,,France,Sweden,New York New Jersey Stadium
+78,30/06/2026,18:00,,Cote d Ivoire,Norway,Dallas Stadium
+79,01/07/2026,02:00,,Mexico,Ecuador,Mexico City Stadium
+80,01/07/2026,17:00,,England,Congo DR,Atlanta Stadium
+81,02/07/2026,01:00,,USA,Bosnia and Herzegovina,San Francisco Bay Area Stadium
+82,01/07/2026,21:00,,Belgium,Senegal,Seattle Stadium
+83,03/07/2026,00:00,,Portugal,Croatia,Toronto Stadium
+84,02/07/2026,20:00,,Spain,Austria,Los Angeles Stadium
+85,03/07/2026,04:00,,Switzerland,Algeria,BC Place Vancouver
+86,03/07/2026,23:00,,Argentina,Cabo Verde,Miami Stadium
+87,04/07/2026,02:30,,Colombia,Ghana,Kansas City Stadium
+88,03/07/2026,19:00,,Australia,Egypt,Dallas Stadium
 89,04/07/2026,22:00,,Winner match 74,Winner match 77,Philadelphia Stadium
 90,04/07/2026,18:00,,Winner match 73,Winner match 75,Houston Stadium
 91,05/07/2026,21:00,,Winner match 76,Winner match 78,New York New Jersey Stadium
