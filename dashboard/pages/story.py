@@ -96,28 +96,25 @@ def _save_cache(data: dict) -> None:
 def _build_best_day_table() -> list[dict]:
     if not _SCORE_HISTORY_PATH.exists():
         return []
-    try:
-        hist = pd.read_csv(_SCORE_HISTORY_PATH, dtype=str)
-        if hist.empty or "Date" not in hist.columns:
-            return []
-        # Filter to players that belong to THIS competition only
-        if _PLAYERS_PATH.exists():
-            current = set(pd.read_csv(_PLAYERS_PATH, dtype=str)["Player"].dropna().tolist())
-            hist = hist[hist["Player"].isin(current)]
-        if hist.empty:
-            return []
-        hist["Date"]   = pd.to_datetime(hist["Date"], errors="coerce")
-        hist["Points"] = pd.to_numeric(hist["Points"], errors="coerce").fillna(0)
-        hist = hist.sort_values(["Player", "Date"])
-        hist["prev"] = hist.groupby("Player")["Points"].shift(1)
-        hist["gain"] = (hist["Points"] - hist["prev"]).fillna(0)
-        best = hist[hist["gain"] > 0].nlargest(10, "gain")
-        return [
-            {"player": str(r["Player"]), "date": r["Date"].strftime("%d %b"), "gain": round(float(r["gain"]), 1)}
-            for _, r in best.iterrows()
-        ]
-    except Exception:
+    hist = pd.read_csv(_SCORE_HISTORY_PATH, dtype=str)
+    if hist.empty or "Date" not in hist.columns:
         return []
+    # Filter to players that belong to THIS competition only
+    if _PLAYERS_PATH.exists():
+        current = set(pd.read_csv(_PLAYERS_PATH, dtype=str)["Player"].dropna().tolist())
+        hist = hist[hist["Player"].isin(current)]
+    if hist.empty:
+        return []
+    hist["Date"]   = pd.to_datetime(hist["Date"], errors="coerce")
+    hist["Points"] = pd.to_numeric(hist["Points"], errors="coerce").fillna(0)
+    hist = hist.sort_values(["Player", "Date"])
+    hist["prev"] = hist.groupby("Player")["Points"].shift(1)
+    hist["gain"] = (hist["Points"] - hist["prev"]).fillna(0)
+    best = hist[hist["gain"] > 0].nlargest(10, "gain")
+    return [
+        {"player": str(r["Player"]), "date": r["Date"].strftime("%d %b"), "gain": round(float(r["gain"]), 1)}
+        for _, r in best.iterrows()
+    ]
 
 
 # ── Context builder ────────────────────────────────────────────────────────────
@@ -163,7 +160,7 @@ def _build_story_context(date_from: date | None = None, date_to: date | None = N
     predictions: dict[str, dict] = {}
     pay_status: dict[str, str] = {}
     if not players_df.empty:
-        pcols = ["WorldCupWinner","RunnerUp","BronzeMedal","GoldenBoot","DarkHorse","FirstKnockedOut"]
+        pcols = ["WorldCupWinner","RunnerUp","BronzeMedal","GoldenBoot","DarkHorse"]
         for _, row in players_df.iterrows():
             p = str(row.get("Player",""))
             pay_status[p] = str(row.get("Status","UNPAID"))
@@ -427,7 +424,7 @@ RULES:
 - Tone: passionate tabloid football journalist
 """
 
-    _models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it"]
+    _models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama-3.1-70b-versatile"]
     raw = None
     last_err = None
     for _model in _models:
@@ -443,8 +440,8 @@ RULES:
             break
         except Exception as _e:
             last_err = _e
-            # Only fall through on rate-limit errors
-            if "429" in str(_e) or "rate_limit" in str(_e).lower():
+            _e_str = str(_e).lower()
+            if "429" in str(_e) or "rate_limit" in _e_str or "decommissioned" in _e_str:
                 continue
             raise
     if raw is None:
@@ -877,6 +874,14 @@ def _render_newspaper(story: dict, meta: dict, context: dict, best_days: list) -
             f'</tr></thead><tbody>{rows_html}</tbody></table></div>',
             unsafe_allow_html=True,
         )
+        # Show latest score snapshot date so any staleness is immediately visible
+        try:
+            _sh = pd.read_csv(_SCORE_HISTORY_PATH, dtype=str)
+            _latest_sh = pd.to_datetime(_sh["Date"], errors="coerce").max()
+            if pd.notna(_latest_sh):
+                st.caption(f"Score history through {_latest_sh.strftime('%d %b')}")
+        except Exception:
+            pass
 
     # ── Top goalscorers + Sweepstake digest ────────────────────────────────
     _hr()
@@ -1068,6 +1073,7 @@ if _is_admin:
 if _generate_clicked:
     with st.spinner("Crunching data and writing the story…"):
         try:
+            st.cache_data.clear()   # ensure leaderboard + stats are fresh from disk
             ctx       = _build_story_context(date_from=_date_from, date_to=_date_to)
             story_out = _generate_story(ctx, _api_key, topic=_topic, suggestions=_suggestions)
             _cache = {
@@ -1099,7 +1105,8 @@ elif _cache and "story" in _cache:
             story=_cache["story"], meta=_cache,
             context=ctx, best_days=_build_best_day_table(),
         )
-    except Exception:
+    except Exception as _e:
+        st.warning(f"Story render error: {_e}")
         st.markdown(str(_cache["story"]))
 else:
     if _is_admin:
