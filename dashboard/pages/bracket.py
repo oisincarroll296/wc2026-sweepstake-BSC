@@ -39,11 +39,11 @@ for _player, _teams_list in assignments.items():
 TIER_LABELS = {1: "Tier 1", 2: "Tier 2", 3: "Tier 3", 4: "Tier 4"}
 
 # ── Bracket constants ─────────────────────────────────────────────────────────
-CARD_H   = 86      # px: height of one match card
-CARD_W   = 180     # px: width of one match card
-BASE     = 108     # px: one R32 slot (card + gap)
-TOTAL_H  = 16 * BASE          # 1728 px total bracket height
-COL_W    = CARD_W + 20        # 200 px: column width
+CARD_H   = 104     # px: height of one match card (taller to fit owner names)
+CARD_W   = 188     # px: width of one match card
+BASE     = 128     # px: one R32 slot (card + gap)
+TOTAL_H  = 16 * BASE          # 2048 px total bracket height
+COL_W    = CARD_W + 20        # 208 px: column width
 CONN_W   = 55                 # px: connector column width between rounds
 LINE_CLR = "#5aa34f"
 
@@ -210,54 +210,63 @@ def _card_html(m: MatchInfo | None) -> str:
     completed = m.status == "Completed"
     stat_col  = "#5aa34f" if not completed else "#94a3b8"
 
-    def _row(name, flag, is_ph, won):
+    owners1   = _owner_map.get(m.team1, [])
+    owners2   = _owner_map.get(m.team2, [])
+    tier1     = tier_map.get(m.team1, 0)
+    tier2     = tier_map.get(m.team2, 0)
+    tcol1     = TIER_COLORS.get(tier1, "#94a3b8") if not is_ph1 else "#d1d5db"
+    tcol2     = TIER_COLORS.get(tier2, "#94a3b8") if not is_ph2 else "#d1d5db"
+
+    def _row(name, flag, is_ph, won, tier_col, owners):
         if is_ph:
             return (
-                f'<div style="display:flex;align-items:center;gap:4px;'
-                f'height:20px;padding:1px 0">'
+                f'<div style="border-left:3px solid #d1d5db;border-radius:0 3px 3px 0;'
+                f'background:#f9fafb;padding:3px 5px;margin:2px 0">'
+                f'<div style="display:flex;align-items:center;gap:4px">'
                 f'<span style="color:#d1d5db;font-size:10px">○</span>'
-                f'<span style="color:#9ca3af;font-size:10.5px">{name}</span>'
+                f'<span style="color:#9ca3af;font-size:10px">{name}</span>'
+                f'</div>'
+                f'<div style="font-size:7.5px;color:#d1d5db;margin-top:1px">TBD</div>'
                 f'</div>'
             )
-        op = "1" if (not completed or won) else "0.32"
-        fw = "700" if won else "500"
-        nm = (name[:21] + "…") if len(name) > 21 else name
+        op  = "1" if (not completed or won) else "0.30"
+        fw  = "700" if won else "600"
+        nm  = (name[:20] + "…") if len(name) > 20 else name
+        # subtle hex alpha for tier background: ~7% opacity = 12 hex
+        bg  = f"{tier_col}12"
+        owner_txt = " · ".join(owners) if owners else "—"
+        # Truncate if too long
+        if len(owner_txt) > 28:
+            owner_txt = owner_txt[:27] + "…"
         return (
-            f'<div style="display:flex;align-items:center;gap:4px;'
-            f'height:20px;padding:1px 0;opacity:{op}">'
-            f'<span style="font-size:13px;line-height:1">{flag}</span>'
+            f'<div style="border-left:3px solid {tier_col};border-radius:0 3px 3px 0;'
+            f'background:{bg};padding:3px 5px;margin:2px 0;opacity:{op}">'
+            f'<div style="display:flex;align-items:center;gap:4px">'
+            f'<span style="font-size:14px;line-height:1">{flag}</span>'
             f'<span style="color:#111;font-weight:{fw};font-size:11px;'
             f'white-space:nowrap">{nm}</span>'
+            f'</div>'
+            f'<div style="font-size:7.5px;color:#6366f1;margin-top:1px;'
+            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'
+            f'{owner_txt}</div>'
             f'</div>'
         )
 
     if completed and m.score1 and m.score2:
         sep = (
-            f'<div style="text-align:center;font-weight:700;font-size:11.5px;'
+            f'<div style="text-align:center;font-weight:700;font-size:11px;'
             f'color:#111;border-top:1px solid #f0f0f0;border-bottom:1px solid #f0f0f0;'
             f'padding:1px 0;margin:1px 0">{m.score1} – {m.score2}</div>'
         )
     else:
         sep = '<div style="height:1px;background:#f0f0f0;margin:2px 0"></div>'
 
-    venue_s = (m.venue[:25] + "…") if len(m.venue) > 25 else m.venue
-    owners1 = _owner_map.get(m.team1, [])
-    owners2 = _owner_map.get(m.team2, [])
-
-    def _owner_tag(owners):
-        if not owners:
-            return ""
-        txt = "·".join(owners)
-        return (
-            f'<span style="color:#6366f1;font-size:8px;'
-            f'background:rgba(99,102,241,0.10);border-radius:3px;'
-            f'padding:0 3px;margin-left:3px">{txt}</span>'
-        )
+    venue_s = (m.venue[:28] + "…") if len(m.venue) > 28 else m.venue
 
     return (
         f'<div style="width:{CARD_W}px;height:{CARD_H}px;background:white;'
         f'border-radius:6px;box-shadow:0 1px 5px rgba(0,0,0,0.10);'
-        f'padding:5px 8px;font-family:system-ui,-apple-system,sans-serif;'
+        f'padding:5px 7px;font-family:system-ui,-apple-system,sans-serif;'
         f'box-sizing:border-box;overflow:hidden">'
         # ── Header: status left, day/time/date right
         f'<div style="display:flex;justify-content:space-between;'
@@ -269,14 +278,14 @@ def _card_html(m: MatchInfo | None) -> str:
         f'<div style="color:#111;font-size:11px;font-weight:700">{m.time_str}</div>'
         f'<div style="color:#6b7280;font-size:7.5px">{m.date_str}</div>'
         f'</div></div>'
-        # ── Teams
-        + _row(m.team1, m.flag1, is_ph1, m.winner == m.team1)
+        # ── Teams with tier colour + owners
+        + _row(m.team1, m.flag1, is_ph1, m.winner == m.team1, tcol1, owners1)
         + sep
-        + _row(m.team2, m.flag2, is_ph2, m.winner == m.team2)
+        + _row(m.team2, m.flag2, is_ph2, m.winner == m.team2, tcol2, owners2)
         # ── Venue
-        + f'<div style="color:#9ca3af;font-size:7px;margin-top:2px;'
+        + f'<div style="color:#9ca3af;font-size:7px;margin-top:3px;'
         f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'
-        f'Venue: {venue_s}</div>'
+        f'📍 {venue_s}</div>'
         f'</div>'
     )
 
