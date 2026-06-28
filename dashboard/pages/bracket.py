@@ -295,7 +295,7 @@ def _card_html(m: MatchInfo | None) -> str:
         f'padding:5px 7px;font-family:system-ui,-apple-system,sans-serif;'
         f'box-sizing:border-box;overflow:hidden">'
         # ── Header row: day · time · date (single line)
-        f'<div style="text-align:center;font-size:8px;font-weight:600;'
+        f'<div style="text-align:center;font-size:10px;font-weight:600;'
         f'color:#374151;margin-bottom:4px;white-space:nowrap;letter-spacing:0.3px">'
         f'{m.day} · {m.time_str} · {m.date_str}</div>'
         # ── Team rows
