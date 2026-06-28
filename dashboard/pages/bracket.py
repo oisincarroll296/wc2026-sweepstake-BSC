@@ -39,12 +39,12 @@ for _player, _teams_list in assignments.items():
 TIER_LABELS = {1: "Tier 1", 2: "Tier 2", 3: "Tier 3", 4: "Tier 4"}
 
 # ── Bracket constants ─────────────────────────────────────────────────────────
-CARD_H   = 104     # px: height of one match card (taller to fit owner names)
-CARD_W   = 188     # px: width of one match card
-BASE     = 128     # px: one R32 slot (card + gap)
-TOTAL_H  = 16 * BASE          # 2048 px total bracket height
-COL_W    = CARD_W + 20        # 208 px: column width
-CONN_W   = 55                 # px: connector column width between rounds
+CARD_H   = 110     # px: height of one match card
+CARD_W   = 210     # px: width (wide enough for full owner names)
+BASE     = 134     # px: one R32 slot (card + gap)
+TOTAL_H  = 16 * BASE          # 2144 px total bracket height
+COL_W    = CARD_W + 16        # column width
+CONN_W   = 52                 # px: connector column width between rounds
 LINE_CLR = "#5aa34f"
 
 # Visual order of match numbers in each round (top to bottom in the bracket)
@@ -58,20 +58,33 @@ BRACKET_SLOTS: list[list[int]] = [
 ROUND_LABELS = ["Last 32", "Last 16", "Quarter-finals", "Semi-finals", "Final"]
 DAY_ABBR     = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
 
-FLAGS: dict[str, str] = {
-    "Germany": "🇩🇪",       "Paraguay": "🇵🇾",     "France": "🇫🇷",
-    "Sweden": "🇸🇪",        "South Africa": "🇿🇦",  "Canada": "🇨🇦",
-    "Netherlands": "🇳🇱",  "Morocco": "🇲🇦",       "Portugal": "🇵🇹",
-    "Croatia": "🇭🇷",       "Spain": "🇪🇸",         "Austria": "🇦🇹",
-    "Switzerland": "🇨🇭",  "Algeria": "🇩🇿",       "Argentina": "🇦🇷",
-    "Cabo Verde": "🇨🇻",   "Colombia": "🇨🇴",       "Ghana": "🇬🇭",
-    "Australia": "🇦🇺",    "Egypt": "🇪🇬",          "USA": "🇺🇸",
-    "Bosnia and Herzegovina": "🇧🇦",               "Belgium": "🇧🇪",
-    "Senegal": "🇸🇳",       "Brazil": "🇧🇷",         "Japan": "🇯🇵",
-    "England": "🏴󠁧󠁢󠁥󠁮󠁧󠁿",   "Congo DR": "🇨🇩",     "Mexico": "🇲🇽",
-    "Ecuador": "🇪🇨",       "Cote d Ivoire": "🇨🇮",  "Norway": "🇳🇴",
-    "Morocco": "🇲🇦",       "Uruguay": "🇺🇾",        "Scotland": "🏴󠁧󠁢󠁳󠁣󠁴󠁿",
+# flagcdn.com country codes for <img> flags (renders reliably in browsers)
+_FLAG_CDN: dict[str, str] = {
+    "Germany": "de",       "Paraguay": "py",      "France": "fr",
+    "Sweden": "se",        "South Africa": "za",  "Canada": "ca",
+    "Netherlands": "nl",   "Morocco": "ma",        "Portugal": "pt",
+    "Croatia": "hr",       "Spain": "es",          "Austria": "at",
+    "Switzerland": "ch",   "Algeria": "dz",        "Argentina": "ar",
+    "Cabo Verde": "cv",    "Colombia": "co",        "Ghana": "gh",
+    "Australia": "au",     "Egypt": "eg",           "USA": "us",
+    "Bosnia and Herzegovina": "ba",                 "Belgium": "be",
+    "Senegal": "sn",        "Brazil": "br",          "Japan": "jp",
+    "England": "gb-eng",   "Congo DR": "cd",        "Mexico": "mx",
+    "Ecuador": "ec",        "Cote d Ivoire": "ci",  "Norway": "no",
+    "Scotland": "gb-sct",  "Uruguay": "uy",
 }
+
+def _flag_img(team: str, h: int = 14) -> str:
+    code = _FLAG_CDN.get(team, "")
+    if not code:
+        return '<span style="display:inline-block;width:20px"></span>'
+    url = f"https://flagcdn.com/w40/{code}.png"
+    return (
+        f'<img src="{url}" '
+        f'style="height:{h}px;width:auto;border-radius:2px;'
+        f'vertical-align:middle;flex-shrink:0;margin-right:1px" '
+        f'onerror="this.style.display=\'none\'">'
+    )
 
 
 # ── Data model ────────────────────────────────────────────────────────────────
@@ -210,78 +223,91 @@ def _card_html(m: MatchInfo | None) -> str:
     completed = m.status == "Completed"
     stat_col  = "#5aa34f" if not completed else "#94a3b8"
 
-    owners1   = _owner_map.get(m.team1, [])
-    owners2   = _owner_map.get(m.team2, [])
-    tier1     = tier_map.get(m.team1, 0)
-    tier2     = tier_map.get(m.team2, 0)
-    tcol1     = TIER_COLORS.get(tier1, "#94a3b8") if not is_ph1 else "#d1d5db"
-    tcol2     = TIER_COLORS.get(tier2, "#94a3b8") if not is_ph2 else "#d1d5db"
+    owners1 = _owner_map.get(m.team1, [])
+    owners2 = _owner_map.get(m.team2, [])
+    tier1   = tier_map.get(m.team1, 0)
+    tier2   = tier_map.get(m.team2, 0)
+    tcol1   = TIER_COLORS.get(tier1, "#94a3b8") if not is_ph1 else "#d1d5db"
+    tcol2   = TIER_COLORS.get(tier2, "#94a3b8") if not is_ph2 else "#d1d5db"
 
-    def _row(name, flag, is_ph, won, tier_col, owners):
+    def _row(name, is_ph, won, tier_col, tier_num, owners):
         if is_ph:
             return (
-                f'<div style="border-left:3px solid #d1d5db;border-radius:0 3px 3px 0;'
-                f'background:#f9fafb;padding:3px 5px;margin:2px 0">'
-                f'<div style="display:flex;align-items:center;gap:4px">'
-                f'<span style="color:#d1d5db;font-size:10px">○</span>'
-                f'<span style="color:#9ca3af;font-size:10px">{name}</span>'
+                f'<div style="border-left:4px solid #d1d5db;border-radius:0 4px 4px 0;'
+                f'background:#f9fafb;padding:3px 6px;margin:2px 0">'
+                f'<div style="display:flex;align-items:center;justify-content:space-between">'
+                f'<div style="display:flex;align-items:center;gap:5px">'
+                f'<span style="color:#d1d5db;font-size:11px;line-height:1">○</span>'
+                f'<span style="color:#9ca3af;font-size:10.5px">{name}</span>'
                 f'</div>'
-                f'<div style="font-size:7.5px;color:#d1d5db;margin-top:1px">TBD</div>'
+                f'<span style="font-size:7.5px;color:#d1d5db;font-weight:700">?</span>'
+                f'</div>'
+                f'<div style="font-size:7px;color:#d1d5db;margin-top:1px">awaiting result</div>'
                 f'</div>'
             )
-        op  = "1" if (not completed or won) else "0.30"
+
+        op  = "1" if (not completed or won) else "0.28"
         fw  = "700" if won else "600"
-        nm  = (name[:20] + "…") if len(name) > 20 else name
-        # subtle hex alpha for tier background: ~7% opacity = 12 hex
-        bg  = f"{tier_col}12"
+        nm  = (name[:22] + "…") if len(name) > 22 else name
+        # tier background: colour at ~12% opacity (hex 1e ≈ 12%)
+        bg  = f"{tier_col}1e"
+        tier_badge = (
+            f'<span style="background:{tier_col};color:#fff;font-size:8px;'
+            f'font-weight:800;border-radius:3px;padding:1px 5px;'
+            f'flex-shrink:0;letter-spacing:0.2px">T{tier_num}</span>'
+        ) if tier_num else ""
+        flag_html = _flag_img(name)
         owner_txt = " · ".join(owners) if owners else "—"
-        # Truncate if too long
-        if len(owner_txt) > 28:
-            owner_txt = owner_txt[:27] + "…"
         return (
-            f'<div style="border-left:3px solid {tier_col};border-radius:0 3px 3px 0;'
-            f'background:{bg};padding:3px 5px;margin:2px 0;opacity:{op}">'
-            f'<div style="display:flex;align-items:center;gap:4px">'
-            f'<span style="font-size:14px;line-height:1">{flag}</span>'
+            f'<div style="border-left:4px solid {tier_col};border-radius:0 4px 4px 0;'
+            f'background:{bg};padding:3px 6px;margin:2px 0;opacity:{op}">'
+            # name row: flag | name | tier badge
+            f'<div style="display:flex;align-items:center;'
+            f'justify-content:space-between;gap:4px">'
+            f'<div style="display:flex;align-items:center;gap:5px;min-width:0;flex:1">'
+            f'{flag_html}'
             f'<span style="color:#111;font-weight:{fw};font-size:11px;'
-            f'white-space:nowrap">{nm}</span>'
+            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{nm}</span>'
             f'</div>'
-            f'<div style="font-size:7.5px;color:#6366f1;margin-top:1px;'
-            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'
-            f'{owner_txt}</div>'
+            f'{tier_badge}'
+            f'</div>'
+            # owner row
+            f'<div style="font-size:7.5px;color:#4f46e5;margin-top:2px;'
+            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
+            f'font-weight:500">{owner_txt}</div>'
             f'</div>'
         )
 
     if completed and m.score1 and m.score2:
         sep = (
             f'<div style="text-align:center;font-weight:700;font-size:11px;'
-            f'color:#111;border-top:1px solid #f0f0f0;border-bottom:1px solid #f0f0f0;'
+            f'color:#111;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;'
             f'padding:1px 0;margin:1px 0">{m.score1} – {m.score2}</div>'
         )
     else:
-        sep = '<div style="height:1px;background:#f0f0f0;margin:2px 0"></div>'
+        sep = '<div style="height:1px;background:#e5e7eb;margin:2px 0"></div>'
 
-    venue_s = (m.venue[:28] + "…") if len(m.venue) > 28 else m.venue
+    venue_s = (m.venue[:30] + "…") if len(m.venue) > 30 else m.venue
 
     return (
         f'<div style="width:{CARD_W}px;height:{CARD_H}px;background:white;'
-        f'border-radius:6px;box-shadow:0 1px 5px rgba(0,0,0,0.10);'
+        f'border-radius:6px;box-shadow:0 2px 6px rgba(0,0,0,0.10);'
         f'padding:5px 7px;font-family:system-ui,-apple-system,sans-serif;'
         f'box-sizing:border-box;overflow:hidden">'
-        # ── Header: status left, day/time/date right
+        # ── Header row: status | day/time/date
         f'<div style="display:flex;justify-content:space-between;'
-        f'align-items:flex-start;margin-bottom:2px">'
+        f'align-items:flex-start;margin-bottom:3px">'
         f'<span style="color:{stat_col};font-size:7px;font-weight:700;'
-        f'text-transform:uppercase;letter-spacing:0.4px">{m.status}</span>'
-        f'<div style="text-align:right;line-height:1.2">'
+        f'text-transform:uppercase;letter-spacing:0.5px">{m.status}</span>'
+        f'<div style="text-align:right;line-height:1.25">'
         f'<div style="color:#6b7280;font-size:7.5px;font-weight:700">{m.day}</div>'
         f'<div style="color:#111;font-size:11px;font-weight:700">{m.time_str}</div>'
         f'<div style="color:#6b7280;font-size:7.5px">{m.date_str}</div>'
         f'</div></div>'
-        # ── Teams with tier colour + owners
-        + _row(m.team1, m.flag1, is_ph1, m.winner == m.team1, tcol1, owners1)
+        # ── Team rows
+        + _row(m.team1, is_ph1, m.winner == m.team1, tcol1, tier1, owners1)
         + sep
-        + _row(m.team2, m.flag2, is_ph2, m.winner == m.team2, tcol2, owners2)
+        + _row(m.team2, is_ph2, m.winner == m.team2, tcol2, tier2, owners2)
         # ── Venue
         + f'<div style="color:#9ca3af;font-size:7px;margin-top:3px;'
         f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'
