@@ -52,12 +52,30 @@ tab_groups, tab_standings, tab_fixtures, tab_results, tab_ownership = st.tabs([
 # TAB 1 — GROUPS
 # ═══════════════════════════════════════════════════════════════════
 with tab_groups:
-    # Build set of teams eliminated in the group stage
+    # Build set of all eliminated teams (group stage + KO losers)
     eliminated_gs: set[str] = set()
     if not stats_df.empty and "RoundReached" in stats_df.columns:
         eliminated_gs = set(
             stats_df[stats_df["RoundReached"] == "GroupStage"]["Team"].tolist()
         )
+    # Add teams knocked out in KO rounds
+    if not results_df.empty and "match_number" in results_df.columns and not fixtures_df.empty:
+        for _, _kr in results_df.iterrows():
+            _kmn = int(pd.to_numeric(_kr.get("match_number", 0), errors="coerce") or 0)
+            if _kmn < 73 or _kmn == 103:   # skip group stage and 3rd-place
+                continue
+            _kfix = fixtures_df[fixtures_df["match_number"] == _kmn]
+            if _kfix.empty:
+                continue
+            _kf  = _kfix.iloc[0]
+            _kh  = str(_kf["home_team"]); _ka = str(_kf["away_team"])
+            _khg = int(float(_kr.get("home_goals", 0) or 0))
+            _kag = int(float(_kr.get("away_goals", 0) or 0))
+            _kpw = str(_kr.get("penalty_winner", "") or "").strip()
+            if _kpw == _kh or (not _kpw and _khg > _kag):
+                eliminated_gs.add(_ka)
+            elif _kpw == _ka or (not _kpw and _kag > _khg):
+                eliminated_gs.add(_kh)
 
     group_letters = sorted(groups.keys())
     for row_start in range(0, len(group_letters), 3):

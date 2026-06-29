@@ -302,11 +302,14 @@ def _card_html(m: MatchInfo | None) -> str:
         + _row(m.team1, is_ph1, m.winner == m.team1, tcol1, tier1, owners1)
         + sep
         + _row(m.team2, is_ph2, m.winner == m.team2, tcol2, tier2, owners2)
-        # ── Venue
-        + f'<div style="color:#9ca3af;font-size:7px;margin-top:3px;'
-        f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'
-        f'📍 {venue_s}</div>'
-        f'</div>'
+        # ── Venue (only for scheduled — score row already uses the space)
+        + (
+            f'<div style="color:#9ca3af;font-size:7px;margin-top:3px;'
+            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'
+            f'📍 {venue_s}</div>'
+            if not completed else ""
+        )
+        + f'</div>'
     )
 
 
