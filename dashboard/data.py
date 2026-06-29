@@ -498,12 +498,20 @@ def _recalculate_match_stats() -> None:
         if col not in ms.columns:
             ms[col] = 0
 
-    # Reset KO-derived RoundReached (R16+) so it rebuilds from match results below
+    # Reset KO-derived RoundReached (R16+) so it rebuilds from match results below.
+    # "GroupStage" and "R32" are preserved (manual/group-stage-derived).
     _KO_RR_RESET = {"R16", "QF", "SF", "Final", "Winner"}
     if "RoundReached" in ms.columns:
         ms.loc[ms["RoundReached"].isin(_KO_RR_RESET), "RoundReached"] = "R32"
 
-    # Map: match number → RoundReached value that the WINNER advances to
+    # Match number → current round (loser's round) and next round (winner advances to)
+    _MATCH_TO_CUR_RR: dict[int, str] = (
+        {mn: "R32"   for mn in range(73, 89)}  |
+        {mn: "R16"   for mn in range(89, 97)}  |
+        {mn: "QF"    for mn in range(97, 101)} |
+        {mn: "SF"    for mn in range(101, 103)} |
+        {104: "Final"}
+    )
     _MATCH_TO_NEXT_RR: dict[int, str] = (
         {mn: "R16"    for mn in range(73, 89)}  |
         {mn: "QF"     for mn in range(89, 97)}  |
@@ -618,11 +626,14 @@ def _recalculate_match_stats() -> None:
                 if mask.any():
                     ms.loc[mask, upset_col] = ms.loc[mask, upset_col].astype(int) + 1
 
-        # Auto-advance RoundReached for knockout matches
-        if not is_group and winner:
+        # Auto-set RoundReached for knockout matches (both winner and loser)
+        if not is_group:
+            _cur_rr  = _MATCH_TO_CUR_RR.get(mn)
             _next_rr = _MATCH_TO_NEXT_RR.get(mn)
-            if _next_rr:
+            if winner and _next_rr:
                 ms.loc[ms["Team"] == winner, "RoundReached"] = _next_rr
+            if loser and _cur_rr:
+                ms.loc[ms["Team"] == loser, "RoundReached"] = _cur_rr
 
         # Special events — aggregated per match from match_results.csv
         ht_col = f"{pfx}HatTricks"
