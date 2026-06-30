@@ -14,7 +14,6 @@ from dashboard.data import (
     get_paid_count, get_pack_count, get_audit_log, get_events,
     get_assignments, get_participants, get_deadlines, countdown, DEADLINE_LABELS,
     get_fixtures, get_match_results, get_match_stats, get_tier_map, get_purchases,
-    get_player_budgets,
 )
 from dashboard.components.ui import page_header, empty_state
 
@@ -44,7 +43,6 @@ def _last_updated() -> str:
         df = pd.read_csv(p, dtype=str).fillna("")
         if df.empty or "match_number" not in df.columns:
             return "No results yet"
-        # Use row count as proxy — most recent result = last row
         return f"{len(df)} result{'s' if len(df) != 1 else ''} entered"
     except Exception:
         return "—"
@@ -150,7 +148,7 @@ top_t, top_pts = get_top_team()
 lb       = get_overall_leaderboard()
 _assignments = get_assignments()
 
-# Compute total matches played per player (sum across all owned teams)
+# Matches played per player (sum across all owned teams)
 try:
     _mr = get_match_results()
     _played_teams: dict[str, int] = {}
@@ -189,30 +187,38 @@ _PRICES_LOOKUP = {
     "BuyIn": 5, "PredictionPack": 5, "Mulligan": 3,
     "NinthTeam": 3, "Resurrection": 3, "Insurance": 2, "TeamSwap": 5,
 }
-_ELIM_RNDS = {"GroupStage", "R16", "QF", "SF", "Final"}
 _TC = {1: "#105AAC", 2: "#15803D", 3: "#A16207", 4: "#B91C1C"}
 
 _ms_home    = get_match_stats()
 _tmap_home  = get_tier_map()
 _purch_home = get_purchases()
-_budgets_df = get_player_budgets()
-_budget_map: dict[str, dict] = {}
-if not _budgets_df.empty:
-    for _, _br in _budgets_df.iterrows():
-        _b = pd.to_numeric(_br.get("Budget", 0), errors="coerce")
-        _a = pd.to_numeric(_br.get("Available", 0), errors="coerce")
-        _budget_map[str(_br["Player"])] = {
-            "budget":    0.0 if pd.isna(_b) else float(_b),
-            "available": 0.0 if pd.isna(_a) else float(_a),
-        }
 
-_rr_home: dict[str, str] = {}
-if not _ms_home.empty:
-    for _, _msr in _ms_home.iterrows():
-        _rr_home[str(_msr["Team"])] = str(_msr.get("RoundReached", "") or "")
+# Build set of eliminated teams: group stage eliminations + KO losers from match results
+_elim_home: set[str] = set()
+if not _ms_home.empty and "RoundReached" in _ms_home.columns:
+    _elim_home = set(_ms_home[_ms_home["RoundReached"] == "GroupStage"]["Team"].tolist())
+_fix_home = get_fixtures()
+_res_home = get_match_results()
+if not _res_home.empty and not _fix_home.empty and "match_number" in _res_home.columns:
+    for _, _hr in _res_home.iterrows():
+        _hmn = int(pd.to_numeric(_hr.get("match_number", 0), errors="coerce") or 0)
+        if _hmn < 73 or _hmn == 103:
+            continue
+        _hfix = _fix_home[_fix_home["match_number"] == _hmn]
+        if _hfix.empty:
+            continue
+        _hf = _hfix.iloc[0]
+        _hh = str(_hf["home_team"]); _ha = str(_hf["away_team"])
+        _hhg = int(float(_hr.get("home_goals", 0) or 0))
+        _hag = int(float(_hr.get("away_goals", 0) or 0))
+        _hpw = str(_hr.get("penalty_winner", "") or "").strip()
+        if _hpw == "home" or (not _hpw and _hhg > _hag):
+            _elim_home.add(_ha)
+        elif _hpw == "away" or (not _hpw and _hag > _hhg):
+            _elim_home.add(_hh)
 
 def _alive_home(t: str) -> bool:
-    return _rr_home.get(t, "") not in _ELIM_RNDS
+    return t not in _elim_home
 
 _pp_home: dict[str, set] = {}
 if not _purch_home.empty:
@@ -236,7 +242,6 @@ else:
         _teams  = _assignments.get(_player, [])
         _ph     = _pp_home.get(_player, set())
         _spent  = sum(_PRICES_LOOKUP.get(p, 0) for p in _ph)
-        _bdata  = _budget_map.get(_player, {})
         _sum_rows.append({
             "rank": _rank, "medal": _medal, "player": _player,
             "pts": int(_pts), "gap": _gap, "played": _played,
@@ -245,13 +250,12 @@ else:
             "t3": sum(1 for t in _teams if _tmap_home.get(t,0)==3 and _alive_home(t)),
             "t4": sum(1 for t in _teams if _tmap_home.get(t,0)==4 and _alive_home(t)),
             "spent": _spent,
-            "budget_total": _bdata.get("budget", 0),
-            "budget_left": _bdata.get("available", 0),
             "pack": "PredictionPack" in _ph, "ninth": "NinthTeam" in _ph,
             "res": "Resurrection" in _ph,    "swap": "TeamSwap"   in _ph,
             "status": _status,
         })
 
+    # ── HTML table ────────────────────────────────────────────────────────
     _HS = "padding:0.32rem 0.6rem;font-size:0.71rem;font-weight:700;white-space:nowrap;text-align:center"
     _CS = "padding:0.38rem 0.6rem;font-size:0.83rem;text-align:center;border-bottom:1px solid #131f2e"
     _SEP = "border-right:1px solid #2A3A4A"
@@ -270,8 +274,7 @@ else:
         + _th("Played",     c="#9CA3AF",  rs=2, extra=_SEP)
         + _th("Teams Still In", c="#9CA3AF", cs=4,
               extra="border-bottom:1px solid #2A3A4A;" + _SEP)
-        + _th("💵 Budget",   c="#6EE7B7",  cs=2,
-              extra="border-bottom:1px solid #2A3A4A;" + _SEP)
+        + _th("💵 Spent",   c="#6EE7B7",  rs=2, extra=_SEP)
         + _th("Purchases",  c="#9CA3AF",  cs=4,
               extra="border-bottom:1px solid #2A3A4A")
     )
@@ -280,8 +283,6 @@ else:
         + _th("T2", c=_TC[2], bg=f"{_TC[2]}20")
         + _th("T3", c=_TC[3], bg=f"{_TC[3]}20")
         + _th("T4", c=_TC[4], bg=f"{_TC[4]}20", extra=_SEP)
-        + _th("Spent",  c="#6EE7B7")
-        + _th("Total",  c="#9CA3AF", extra=_SEP)
         + _th("Pack",  c="#9CA3AF")
         + _th("9th",   c="#9CA3AF")
         + _th("Res",   c="#9CA3AF")
@@ -320,8 +321,7 @@ else:
                 style = f"color:{tc};font-weight:800;{sep}"
             cells += _td(v, style)
 
-        cells += _td(f"💵 €{r['spent']}", f"{op}color:#6EE7B7;font-weight:700")
-        cells += _td(f"€{int(r['budget_total'])}", f"{op}color:#6B7280;font-weight:600;{_SEP}")
+        cells += _td(f"💵 €{r['spent']}", f"{op}color:#6EE7B7;font-weight:700;{_SEP}")
 
         for key in ("pack","ninth","res","swap"):
             v = r[key]
@@ -341,7 +341,7 @@ else:
         f'<tbody>{body}</tbody>'
         f'</table></div>'
         f'<div style="font-size:0.69rem;color:#4B5563;margin-top:0.3rem">'
-        f'T1–T4 = teams still in the tournament per tier &nbsp;·&nbsp; '
+        f'T1–T4 = teams still in the tournament per tier (2 per tier at start) &nbsp;·&nbsp; '
         f'Unpaid players faded</div>',
         unsafe_allow_html=True,
     )
@@ -352,7 +352,6 @@ st.divider()
 col_left, col_right = st.columns([2, 3], gap="large")
 
 with col_left:
-    # Prize Split
     st.subheader("Prize Split")
     pool_val = pool.get("current_pot", 0)
     splits = [

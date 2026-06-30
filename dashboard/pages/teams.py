@@ -72,9 +72,9 @@ with tab_groups:
             _khg = int(float(_kr.get("home_goals", 0) or 0))
             _kag = int(float(_kr.get("away_goals", 0) or 0))
             _kpw = str(_kr.get("penalty_winner", "") or "").strip()
-            if _kpw == _kh or (not _kpw and _khg > _kag):
+            if _kpw == "home" or (not _kpw and _khg > _kag):
                 eliminated_gs.add(_ka)
-            elif _kpw == _ka or (not _kpw and _kag > _khg):
+            elif _kpw == "away" or (not _kpw and _kag > _khg):
                 eliminated_gs.add(_kh)
 
     group_letters = sorted(groups.keys())

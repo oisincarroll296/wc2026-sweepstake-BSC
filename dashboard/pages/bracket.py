@@ -169,11 +169,11 @@ def _build_matches(fixtures_df, results_df) -> dict[int, MatchInfo]:
         away = str(fix["away_team"])
         hg   = int(r["home_goals"])
         ag   = int(r["away_goals"])
-        pw   = str(r.get("penalty_winner", "") or "")
-        pw   = pw if pw not in ("nan", "None", "") else None
-        if pw == home or (not pw and hg > ag):
+        pw   = str(r.get("penalty_winner", "") or "").strip()
+        pw   = None if pw in ("nan", "None", "") else pw
+        if pw == "home" or (not pw and hg > ag):
             winner_of[mn], loser_of[mn] = home, away
-        elif pw == away or (not pw and ag > hg):
+        elif pw == "away" or (not pw and ag > hg):
             winner_of[mn], loser_of[mn] = away, home
 
     out: dict[int, MatchInfo] = {}
