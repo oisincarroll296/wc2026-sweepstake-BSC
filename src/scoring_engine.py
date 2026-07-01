@@ -40,7 +40,7 @@ UPSET_WIN_BONUSES: dict[int, int] = {1: 15, 2: 30, 3: 50}
 
 # Cumulative dark horse bonuses — awarded for each round reached
 DARK_HORSE_BONUSES: dict[str, int] = {
-    "QF": 15, "SF": 30, "Final": 40, "Winner": 50,
+    "R32": 5, "R16": 10, "QF": 15, "SF": 30, "Final": 40, "Winner": 50,
 }
 
 # Progression bonuses per tier — cumulative for each knockout round cleared
@@ -53,7 +53,7 @@ PROGRESSION_BONUSES: dict[int, dict[str, int]] = {
 
 ROUND_ORDER: list[str] = ["GroupStage", "R32", "R16", "QF", "SF", "Final", "Winner"]
 KNOCKOUT_ROUNDS: list[str] = ["R32", "R16", "QF", "SF", "Final", "Winner"]
-DARK_HORSE_QUALIFYING_ROUNDS: list[str] = ["QF", "SF", "Final", "Winner"]
+DARK_HORSE_QUALIFYING_ROUNDS: list[str] = ["R32", "R16", "QF", "SF", "Final", "Winner"]
 
 # Insurance triggers for T1 teams eliminated at or before R32
 INSURANCE_ELIGIBLE_ROUNDS = frozenset({"GroupStage", "R32"})
