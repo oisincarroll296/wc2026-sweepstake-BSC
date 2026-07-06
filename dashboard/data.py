@@ -360,6 +360,67 @@ def get_match_results() -> pd.DataFrame:
         return pd.DataFrame()
 
 
+@st.cache_data(ttl=10)
+def get_eliminated_teams() -> frozenset:
+    """Return frozenset of team names that are definitively eliminated.
+
+    Uses KO match results (not RoundReached alone) because RoundReached
+    semantics are: 'R16' = won R32 (alive or later eliminated at R16),
+    which is ambiguous without cross-checking actual results.
+    """
+    ms  = get_match_stats()
+    res = get_match_results()
+    fix = get_fixtures()
+    elim: set[str] = set()
+    if not ms.empty and "RoundReached" in ms.columns:
+        elim.update(ms[ms["RoundReached"] == "GroupStage"]["Team"].tolist())
+    if not res.empty and not fix.empty and "match_number" in res.columns:
+        for _, r in res.iterrows():
+            mn = int(pd.to_numeric(r.get("match_number", 0), errors="coerce") or 0)
+            if mn < 73 or mn == 103:
+                continue
+            fx = fix[fix["match_number"] == mn]
+            if fx.empty:
+                continue
+            f   = fx.iloc[0]
+            hh  = str(f["home_team"]); ha = str(f["away_team"])
+            hg  = int(float(r.get("home_goals", 0) or 0))
+            ag  = int(float(r.get("away_goals", 0) or 0))
+            pw  = str(r.get("penalty_winner", "") or "").strip()
+            if pw == "home" or (not pw and hg > ag):
+                elim.add(ha)
+            elif pw == "away" or (not pw and ag > hg):
+                elim.add(hh)
+    return frozenset(elim)
+
+
+@st.cache_data(ttl=10)
+def get_ko_winner_of() -> dict:
+    """Return {match_number: winning_team_name} for completed KO matches."""
+    res = get_match_results()
+    fix = get_fixtures()
+    result: dict[int, str] = {}
+    if res.empty or fix.empty or "match_number" not in res.columns:
+        return result
+    for _, r in res.iterrows():
+        mn = int(pd.to_numeric(r.get("match_number", 0), errors="coerce") or 0)
+        if mn < 73 or mn == 103:
+            continue
+        fx = fix[fix["match_number"] == mn]
+        if fx.empty:
+            continue
+        f   = fx.iloc[0]
+        hh  = str(f["home_team"]); ha = str(f["away_team"])
+        hg  = int(float(r.get("home_goals", 0) or 0))
+        ag  = int(float(r.get("away_goals", 0) or 0))
+        pw  = str(r.get("penalty_winner", "") or "").strip()
+        if pw == "home" or (not pw and hg > ag):
+            result[mn] = hh
+        elif pw == "away" or (not pw and ag > hg):
+            result[mn] = ha
+    return result
+
+
 def _snapshot_score_history() -> None:
     """Write today's score snapshot to score_history.csv — called after each recalculation."""
     import json

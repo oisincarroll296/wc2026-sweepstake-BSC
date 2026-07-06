@@ -14,6 +14,7 @@ from dashboard.data import (
     get_paid_count, get_pack_count, get_audit_log, get_events,
     get_assignments, get_participants, get_deadlines, countdown, DEADLINE_LABELS,
     get_fixtures, get_match_results, get_match_stats, get_tier_map, get_purchases,
+    get_eliminated_teams, get_ko_winner_of,
 )
 from dashboard.components.ui import page_header, empty_state
 
@@ -193,52 +194,11 @@ _ms_home    = get_match_stats()
 _tmap_home  = get_tier_map()
 _purch_home = get_purchases()
 
-# Build set of eliminated teams: group stage eliminations + KO losers from match results
-_elim_home: set[str] = set()
-if not _ms_home.empty and "RoundReached" in _ms_home.columns:
-    _elim_home = set(_ms_home[_ms_home["RoundReached"] == "GroupStage"]["Team"].tolist())
-_fix_home = get_fixtures()
-_res_home = get_match_results()
-if not _res_home.empty and not _fix_home.empty and "match_number" in _res_home.columns:
-    for _, _hr in _res_home.iterrows():
-        _hmn = int(pd.to_numeric(_hr.get("match_number", 0), errors="coerce") or 0)
-        if _hmn < 73 or _hmn == 103:
-            continue
-        _hfix = _fix_home[_fix_home["match_number"] == _hmn]
-        if _hfix.empty:
-            continue
-        _hf = _hfix.iloc[0]
-        _hh = str(_hf["home_team"]); _ha = str(_hf["away_team"])
-        _hhg = int(float(_hr.get("home_goals", 0) or 0))
-        _hag = int(float(_hr.get("away_goals", 0) or 0))
-        _hpw = str(_hr.get("penalty_winner", "") or "").strip()
-        if _hpw == "home" or (not _hpw and _hhg > _hag):
-            _elim_home.add(_ha)
-        elif _hpw == "away" or (not _hpw and _hag > _hhg):
-            _elim_home.add(_hh)
+_elim_home     = get_eliminated_teams()
+_winner_of_home = get_ko_winner_of()
 
 def _alive_home(t: str) -> bool:
     return t not in _elim_home
-
-# Build winner-of dict for placeholder resolution ("Winner match X")
-_winner_of_home: dict[int, str] = {}
-if not _res_home.empty and not _fix_home.empty and "match_number" in _res_home.columns:
-    for _, _wr in _res_home.iterrows():
-        _wmn = int(pd.to_numeric(_wr.get("match_number", 0), errors="coerce") or 0)
-        if _wmn < 73 or _wmn == 103:
-            continue
-        _wfix = _fix_home[_fix_home["match_number"] == _wmn]
-        if _wfix.empty:
-            continue
-        _wf  = _wfix.iloc[0]
-        _whh = str(_wf["home_team"]); _wha = str(_wf["away_team"])
-        _whg = int(float(_wr.get("home_goals", 0) or 0))
-        _wag = int(float(_wr.get("away_goals", 0) or 0))
-        _wpw = str(_wr.get("penalty_winner", "") or "").strip()
-        if _wpw == "home" or (not _wpw and _whg > _wag):
-            _winner_of_home[_wmn] = _whh
-        elif _wpw == "away" or (not _wpw and _wag > _whg):
-            _winner_of_home[_wmn] = _wha
 
 def _resolve_home(raw: str) -> str:
     s = str(raw or "").strip()
@@ -372,6 +332,130 @@ else:
         f'Unpaid players faded</div>',
         unsafe_allow_html=True,
     )
+
+st.divider()
+
+# ── Top Countries Table ────────────────────────────────────────────────────
+try:
+    from src.scoring_engine import calculate_team_points as _calc_tp
+    _ms_top   = get_match_stats()
+    _tm_top   = get_tier_map()
+    _asgn_top = get_assignments()
+    # Build ownership map: team → list of owners
+    _owners_of: dict[str, list[str]] = {}
+    for _pl_name, _teams in _asgn_top.items():
+        for _t in _teams:
+            _owners_of.setdefault(_t, []).append(_pl_name)
+    # Compute points for every team that has stats
+    _rows_top = []
+    if not _ms_top.empty:
+        for _, _tr in _ms_top.iterrows():
+            _tn = str(_tr["Team"])
+            _tier = _tm_top.get(_tn, 1)
+            _tp   = _calc_tp(_tn, _ms_top, _tier)
+            _bd   = _tp.get("breakdown", {})
+            # Aggregate goals (group + knockout)
+            _goals  = int(_bd.get("GroupGoals", 0)) + int(_bd.get("KnockoutGoals", 0))
+            # Clean sheets
+            _cs     = int(_bd.get("GroupCleanSheets", 0) // 2) + int(_bd.get("KnockoutCleanSheets", 0) // 2)
+            # Wins (regular + penalty + comeback)
+            _wins   = (int(_bd.get("GroupWins", 0) // 3)
+                       + int(_bd.get("GroupPenaltyWins", 0) // 3)
+                       + int(_bd.get("GroupComebackWins", 0) // 3)
+                       + int(_bd.get("KnockoutWins", 0) // 3)
+                       + int(_bd.get("KnockoutPenaltyWins", 0) // 3)
+                       + int(_bd.get("KnockoutComebackWins", 0) // 3))
+            _group_winner = bool(_bd.get("GroupWinner", 0))
+            # Progression bonuses total
+            _prog_pts = sum(v for k, v in _bd.items() if k.startswith("Progression_"))
+            # Upset wins points total
+            _upset_pts = sum(
+                v for k, v in _bd.items()
+                if ("UpsetWins" in k)
+            )
+            # Special events points total
+            _special_keys = {"ShirtRemovals", "GKGoals", "RedCards", "FirstEliminated"}
+            _sp_pts = sum(v for k, v in _bd.items() if k in _special_keys)
+            _rows_top.append({
+                "team": _tn, "tier": _tier, "total": _tp.get("total", 0),
+                "group_pts": _tp.get("group_stage", 0),
+                "ko_pts": _tp.get("knockout", 0),
+                "goals": _goals, "clean_sheets": _cs, "wins": _wins,
+                "group_winner": _group_winner,
+                "progression": _prog_pts, "upset": _upset_pts, "special": _sp_pts,
+                "owners": ", ".join(_owners_of.get(_tn, ["—"])),
+            })
+    _rows_top.sort(key=lambda x: -x["total"])
+    _top15 = _rows_top[:15]
+    if _top15:
+        _TIER_C = {1: "#105AAC", 2: "#15803D", 3: "#A16207", 4: "#B91C1C"}
+        _rows_html = ""
+        for _i, _r in enumerate(_top15, 1):
+            _tc   = _TIER_C.get(_r["tier"], "#6B7280")
+            _wins_str = f'{_r["wins"]} win{"s" if _r["wins"] != 1 else ""}'
+            if _r["group_winner"]:
+                _wins_str += " · group winner"
+            _prog_str  = f'+{_r["progression"]:.0f}' if _r["progression"] else "—"
+            _upset_str = f'+{_r["upset"]:.0f}'       if _r["upset"]       else "—"
+            _sp_str    = f'{_r["special"]:+.0f}'      if _r["special"]     else "—"
+            _row_bg = "#1A2535" if _i % 2 == 0 else "#1E2937"
+            _rows_html += (
+                f'<tr style="background:{_row_bg}">'
+                f'<td style="color:#6B7280;padding:0.35rem 0.5rem;font-size:0.75rem">{_i}</td>'
+                f'<td style="padding:0.35rem 0.5rem">'
+                f'<span style="display:inline-block;width:3px;height:14px;background:{_tc};'
+                f'border-radius:2px;margin-right:5px;vertical-align:middle"></span>'
+                f'<span style="color:#F5F5F5;font-weight:600;font-size:0.82rem">{_r["team"]}</span>'
+                f'<span style="color:#6B7280;font-size:0.65rem;margin-left:5px">T{_r["tier"]}</span>'
+                f'</td>'
+                f'<td style="color:#9CA3AF;font-size:0.72rem;padding:0.35rem 0.5rem">{_r["owners"]}</td>'
+                f'<td style="color:#D4A017;font-weight:700;font-size:0.85rem;padding:0.35rem 0.5rem;text-align:right">{_r["total"]:.0f}</td>'
+                f'<td style="color:#93C5FD;font-size:0.75rem;padding:0.35rem 0.5rem;text-align:right">{_r["group_pts"]:.0f}</td>'
+                f'<td style="color:#6EE7B7;font-size:0.75rem;padding:0.35rem 0.5rem;text-align:right">{_r["ko_pts"]:.0f}</td>'
+                f'<td style="color:#9CA3AF;font-size:0.73rem;padding:0.35rem 0.5rem;text-align:right">{_r["goals"]} goals</td>'
+                f'<td style="color:#9CA3AF;font-size:0.73rem;padding:0.35rem 0.5rem;text-align:right">{_r["clean_sheets"]} clean sheet{"s" if _r["clean_sheets"] != 1 else ""}</td>'
+                f'<td style="color:#9CA3AF;font-size:0.73rem;padding:0.35rem 0.5rem;text-align:right">{_wins_str}</td>'
+                f'<td style="color:#C4B5FD;font-size:0.73rem;padding:0.35rem 0.5rem;text-align:right">{_prog_str}</td>'
+                f'<td style="color:#FCD34D;font-size:0.73rem;padding:0.35rem 0.5rem;text-align:right">{_upset_str}</td>'
+                f'<td style="color:#F472B6;font-size:0.73rem;padding:0.35rem 0.5rem;text-align:right">{_sp_str}</td>'
+                f'</tr>'
+            )
+        _header_style = "color:#9CA3AF;font-size:0.7rem;padding:0.3rem 0.5rem;border-bottom:1px solid #2A3A4A"
+        with st.expander("🌍 Top 15 Countries by Points", expanded=True):
+            st.markdown(
+                f'<div style="overflow-x:auto">'
+                f'<table style="width:100%;border-collapse:collapse;font-family:inherit">'
+                f'<thead><tr style="background:#0D1B2A">'
+                f'<th style="{_header_style};text-align:left">#</th>'
+                f'<th style="{_header_style};text-align:left">Country</th>'
+                f'<th style="{_header_style};text-align:left">Owners</th>'
+                f'<th style="{_header_style};text-align:right">Total pts</th>'
+                f'<th style="{_header_style};text-align:right;color:#93C5FD">Group stage</th>'
+                f'<th style="{_header_style};text-align:right;color:#6EE7B7">Knockout</th>'
+                f'<th style="{_header_style};text-align:right">Goals</th>'
+                f'<th style="{_header_style};text-align:right">Clean sheets</th>'
+                f'<th style="{_header_style};text-align:right">Wins</th>'
+                f'<th style="{_header_style};text-align:right;color:#C4B5FD">Progression</th>'
+                f'<th style="{_header_style};text-align:right;color:#FCD34D">Upset wins</th>'
+                f'<th style="{_header_style};text-align:right;color:#F472B6">Special events</th>'
+                f'</tr></thead>'
+                f'<tbody>{_rows_html}</tbody>'
+                f'</table>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                '<div style="font-size:0.65rem;color:#4B5563;margin-top:0.4rem">'
+                'Group stage = goals + clean sheets + wins + group-stage upsets &nbsp;·&nbsp; '
+                'Knockout = same plus progression bonuses &nbsp;·&nbsp; '
+                'Progression = bonus for reaching each knockout round &nbsp;·&nbsp; '
+                'Upset wins = bonus for beating a higher-tier team &nbsp;·&nbsp; '
+                'Special events = shirt removal (+25), goalkeeper goal (+75), red card (−5), first team out (+35)'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+except Exception:
+    pass
 
 st.divider()
 

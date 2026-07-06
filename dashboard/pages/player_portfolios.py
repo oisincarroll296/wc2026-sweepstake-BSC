@@ -11,6 +11,7 @@ from dashboard.data import (
     get_participants, get_assignments, get_match_stats, get_purchases,
     get_captains, get_predictions, get_statuses, get_tier_map,
     get_events, is_predictions_locked, get_goals_conceded_map, get_swap_offsets,
+    get_eliminated_teams,
 )
 from dashboard.config import TIER_COLORS, PLOTLY_LAYOUT
 from dashboard.components.ui import page_header, empty_state, tier_badge
@@ -46,8 +47,9 @@ with st.expander("📤 Share my portfolio link", expanded=False):
     st.code(_share_url, language=None)
 
 assignments  = get_assignments()
-match_stats  = get_match_stats()
-_gc_map      = get_goals_conceded_map()
+match_stats   = get_match_stats()
+_elim_teams   = get_eliminated_teams()
+_gc_map       = get_goals_conceded_map()
 purchases    = get_purchases()
 captains     = get_captains()
 predictions  = get_predictions()
@@ -130,10 +132,11 @@ if not captains.empty:
 # Round Reached helper
 ROUND_LABELS = {
     "GroupStage": "Eliminated (Groups)",
-    "R16":        "Eliminated (R16)",
-    "QF":         "Eliminated (QF)",
-    "SF":         "Eliminated (SF)",
-    "Final":      "Runner-up",
+    "R32":        "Eliminated (Round of 32)",
+    "R16":        "Round of 16",
+    "QF":         "Quarter-Final",
+    "SF":         "Semi-Final",
+    "Final":      "Final",
     "Winner":     "Champion",
     "":           "Active",
 }
@@ -146,8 +149,8 @@ def _round_reached(team: str) -> str:
         return ""
     return str(row.iloc[0].get("RoundReached", "") or "")
 
-def _is_eliminated(rnd: str) -> bool:
-    return rnd in ("GroupStage", "R16", "QF", "SF", "Final")
+def _is_eliminated(team: str) -> bool:
+    return team in _elim_teams
 
 _CHIP = (
     'background:{bg};color:{fg};font-size:0.65rem;border-radius:4px;'
@@ -158,6 +161,15 @@ _KO_BG, _KO_FG   = "#1A3325", "#6EE7B7"   # green tint — knockout
 _PR_BG, _PR_FG   = "#2D1F3D", "#C4B5FD"   # purple — progression
 _SP_BG, _SP_FG   = "#2D1A2A", "#F472B6"   # pink — special events
 
+_ROUND_FULL = {
+    "R32": "Round of 32", "R16": "Round of 16",
+    "QF": "Quarter-final", "SF": "Semi-final",
+    "Final": "Final", "Winner": "Winner",
+}
+
+def _pl(n: int, word: str) -> str:
+    return f"{n} {word}{'s' if n != 1 else ''}"
+
 def _breakdown_html(breakdown: dict) -> str:
     """Return an HTML string of coloured chips for the score breakdown."""
     gs_chips, ko_chips, prog_chips = [], [], []
@@ -166,53 +178,59 @@ def _breakdown_html(breakdown: dict) -> str:
         return f'<span style="{_CHIP.format(bg=bg, fg=fg)}">{label}</span>'
 
     GS_MAP = [
-        ("GroupGoals",        1, "⚽", "G"),
-        ("GroupCleanSheets",  2, "🧤", "CS"),
-        ("GroupPenaltyWins",  3, "🎯", "PW"),
-        ("GroupComebackWins", 3, "💪", "CBW"),
+        ("GroupGoals",        1, "⚽", "goal"),
+        ("GroupCleanSheets",  2, "🧤", "clean sheet"),
+        ("GroupPenaltyWins",  3, "🎯", "penalty win"),
+        ("GroupComebackWins", 3, "💪", "comeback win"),
     ]
     KO_MAP = [
-        ("KnockoutGoals",        1, "⚽", "G"),
-        ("KnockoutCleanSheets",  2, "🧤", "CS"),
-        ("KnockoutPenaltyWins",  3, "🎯", "PW"),
-        ("KnockoutComebackWins", 3, "💪", "CBW"),
+        ("KnockoutGoals",        1, "⚽", "goal"),
+        ("KnockoutCleanSheets",  2, "🧤", "clean sheet"),
+        ("KnockoutPenaltyWins",  3, "🎯", "penalty win"),
+        ("KnockoutComebackWins", 3, "💪", "comeback win"),
     ]
 
-    for col, per, icon, abbr in GS_MAP:
+    for col, per, icon, word in GS_MAP:
         pts = breakdown.get(col, 0)
         if pts:
             count = int(pts // per)
-            gs_chips.append(chip(f"{icon} {count}{abbr} +{pts:.0f}", _GS_BG, _GS_FG))
+            gs_chips.append(chip(f"{icon} {_pl(count, word)} +{pts:.0f}", _GS_BG, _GS_FG))
 
     if breakdown.get("GroupWinner"):
-        gs_chips.append(chip("🏆 GW +3", _GS_BG, _GS_FG))
+        gs_chips.append(chip("🏆 Group winner +3", _GS_BG, _GS_FG))
 
-    for col, per, icon, abbr in KO_MAP:
+    for col, per, icon, word in KO_MAP:
         pts = breakdown.get(col, 0)
         if pts:
             count = int(pts // per)
-            ko_chips.append(chip(f"{icon} {count}{abbr} +{pts:.0f}", _KO_BG, _KO_FG))
+            ko_chips.append(chip(f"{icon} {_pl(count, word)} +{pts:.0f}", _KO_BG, _KO_FG))
 
     for key, pts in breakdown.items():
         if key.startswith("Progression_") and pts:
             rnd = key.replace("Progression_", "")
-            prog_chips.append(chip(f"📈 {rnd} +{pts:.0f}", _PR_BG, _PR_FG))
+            rnd_label = _ROUND_FULL.get(rnd, rnd)
+            prog_chips.append(chip(f"📈 Reached {rnd_label} +{pts:.0f}", _PR_BG, _PR_FG))
 
     # Upset win chips
-    for diff, label in [(1, "1T"), (2, "2T"), (3, "3T")]:
-        for stage, prefix in [("Group", "GS"), ("Knockout", "KO")]:
+    tier_desc = {1: "1 tier higher", 2: "2 tiers higher", 3: "3 tiers higher"}
+    upset_pts = {1: 15, 2: 30, 3: 50}
+    for diff in [1, 2, 3]:
+        for stage in ["Group", "Knockout"]:
             col = f"{stage}UpsetWins{diff}"
             pts = breakdown.get(col, 0)
             if pts:
-                count = int(pts // {1: 15, 2: 30, 3: 50}[diff])
-                ko_chips.append(chip(f"⚡ {count}×{label} upset +{pts:.0f}", _KO_BG, _KO_FG))
+                count = int(pts // upset_pts[diff])
+                ko_chips.append(chip(
+                    f"⚡ {_pl(count, 'upset win')} ({tier_desc[diff]}) +{pts:.0f}",
+                    _KO_BG, _KO_FG,
+                ))
 
     sp_chips = []
     for key, label, icon in [
-        ("ShirtRemovals", "shirt", "👕"),
-        ("GKGoals",       "GK goal", "🥅"),
-        ("RedCards",      "red card", "🟥"),
-        ("FirstEliminated", "1st out", "💀"),
+        ("ShirtRemovals",   "shirt removal",       "👕"),
+        ("GKGoals",         "goalkeeper goal",      "🥅"),
+        ("RedCards",        "red card",             "🟥"),
+        ("FirstEliminated", "first team eliminated","💀"),
     ]:
         pts = breakdown.get(key, 0)
         if pts:
@@ -250,7 +268,7 @@ with col_teams:
         ko_pts    = tp.get("knockout", 0)
         sp_pts    = tp.get("special", 0)
         total_pts = tp.get("total", 0)
-        eliminated = _is_eliminated(rnd)
+        eliminated = _is_eliminated(team)
 
         is_pre_cap = team == pre_cap_team
         is_ko_cap  = team == kn_cap_team
@@ -278,6 +296,9 @@ with col_teams:
         if is_historical:
             stage_label = f"Now: {status_txt}"
             pts_label   = "pts earned"
+        elif eliminated:
+            stage_label = status_txt
+            pts_label   = "pts"
         else:
             stage_label = ("Group + KO" if in_gs and in_ko else "KO only" if in_ko else "Group")
             pts_label   = "pts"
@@ -302,8 +323,8 @@ with col_teams:
             f'</div>'
             f'<div style="text-align:right">'
             f'<div style="color:#F5F5F5;font-weight:700;font-size:1.0rem">{total_pts:.0f} {pts_label}</div>'
-            f'<div style="color:#9CA3AF;font-size:0.7rem">Grp {gs_pts:.0f} · KO {ko_pts:.0f}'
-            f'{"· Sp " + f"{sp_pts:+.0f}" if sp_pts else ""}{bonus_html}</div>'
+            f'<div style="color:#9CA3AF;font-size:0.7rem">Group {gs_pts:.0f} · Knockout {ko_pts:.0f}'
+            f'{"· Special " + f"{sp_pts:+.0f}" if sp_pts else ""}{bonus_html}</div>'
             f'</div>'
             f'</div>'
             f'{bd_html}'
@@ -419,7 +440,7 @@ with col_extras:
             _nt_total   = _nt_tp.get("total", 0)
             _nt_rnd     = _round_reached(_nt)
             _nt_status  = ROUND_LABELS.get(_nt_rnd, "🟢 Active")
-            _nt_elim    = _is_eliminated(_nt_rnd)
+            _nt_elim    = _is_eliminated(_nt)
             _nt_op      = "0.5" if _nt_elim else "1"
             st.markdown(
                 f'<div style="background:#1E2937;border-left:4px solid {_nt_col};border-radius:0 6px 6px 0;'
