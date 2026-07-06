@@ -360,30 +360,98 @@ def get_match_results() -> pd.DataFrame:
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=10)
-def get_eliminated_teams() -> frozenset:
-    """Return frozenset of team names that are definitively eliminated.
+def _build_ko_res_by_mn(res: pd.DataFrame) -> dict:
+    """Return {match_number: result_row} for KO matches (mn >= 73, skip 103)."""
+    out: dict[int, object] = {}
+    if res.empty or "match_number" not in res.columns:
+        return out
+    for _, r in res.iterrows():
+        try:
+            mn = int(r["match_number"])
+        except (ValueError, TypeError):
+            continue
+        if mn >= 73 and mn != 103:
+            out[mn] = r
+    return out
 
-    Uses KO match results (not RoundReached alone) because RoundReached
-    semantics are: 'R16' = won R32 (alive or later eliminated at R16),
-    which is ambiguous without cross-checking actual results.
+
+@st.cache_data(ttl=10)
+def get_ko_winner_of() -> dict:
+    """Return {match_number: winning_team_name} for completed KO matches.
+
+    Processes results in sorted match-number order so R32 winners are known
+    before R16 fixtures (which store 'Winner match X' placeholders) are processed.
     """
-    ms  = get_match_stats()
     res = get_match_results()
     fix = get_fixtures()
+    winner_of: dict[int, str] = {}
+    if res.empty or fix.empty:
+        return winner_of
+
+    def _resolve(raw: str) -> str:
+        s = str(raw or "").strip()
+        if s.startswith("Winner match "):
+            try:
+                return winner_of.get(int(s.split()[-1]), s)
+            except ValueError:
+                return s
+        return s
+
+    _res_map = _build_ko_res_by_mn(res)
+    for mn in sorted(_res_map.keys()):
+        r  = _res_map[mn]
+        fx = fix[fix["match_number"] == mn]
+        if fx.empty:
+            continue
+        f   = fx.iloc[0]
+        hh  = _resolve(str(f["home_team"]))
+        ha  = _resolve(str(f["away_team"]))
+        hg  = int(float(r.get("home_goals", 0) or 0))
+        ag  = int(float(r.get("away_goals", 0) or 0))
+        pw  = str(r.get("penalty_winner", "") or "").strip()
+        if pw == "home" or (not pw and hg > ag):
+            winner_of[mn] = hh
+        elif pw == "away" or (not pw and ag > hg):
+            winner_of[mn] = ha
+    return winner_of
+
+
+@st.cache_data(ttl=10)
+def get_eliminated_teams() -> frozenset:
+    """Return frozenset of definitively eliminated team names.
+
+    Derives eliminations from actual KO match results (not RoundReached alone)
+    because 'R16' means 'won R32' — ambiguous until the R16 result is entered.
+    Processes matches in sorted order so R32 winners resolve R16+ placeholders.
+    """
+    ms        = get_match_stats()
+    winner_of = get_ko_winner_of()
+    res       = get_match_results()
+    fix       = get_fixtures()
     elim: set[str] = set()
+
     if not ms.empty and "RoundReached" in ms.columns:
         elim.update(ms[ms["RoundReached"] == "GroupStage"]["Team"].tolist())
-    if not res.empty and not fix.empty and "match_number" in res.columns:
-        for _, r in res.iterrows():
-            mn = int(pd.to_numeric(r.get("match_number", 0), errors="coerce") or 0)
-            if mn < 73 or mn == 103:
-                continue
+
+    def _resolve(raw: str) -> str:
+        s = str(raw or "").strip()
+        if s.startswith("Winner match "):
+            try:
+                return winner_of.get(int(s.split()[-1]), s)
+            except ValueError:
+                return s
+        return s
+
+    if not res.empty and not fix.empty:
+        _res_map2 = _build_ko_res_by_mn(res)
+        for mn in sorted(_res_map2.keys()):
+            r  = _res_map2[mn]
             fx = fix[fix["match_number"] == mn]
             if fx.empty:
                 continue
             f   = fx.iloc[0]
-            hh  = str(f["home_team"]); ha = str(f["away_team"])
+            hh  = _resolve(str(f["home_team"]))
+            ha  = _resolve(str(f["away_team"]))
             hg  = int(float(r.get("home_goals", 0) or 0))
             ag  = int(float(r.get("away_goals", 0) or 0))
             pw  = str(r.get("penalty_winner", "") or "").strip()
@@ -392,33 +460,6 @@ def get_eliminated_teams() -> frozenset:
             elif pw == "away" or (not pw and ag > hg):
                 elim.add(hh)
     return frozenset(elim)
-
-
-@st.cache_data(ttl=10)
-def get_ko_winner_of() -> dict:
-    """Return {match_number: winning_team_name} for completed KO matches."""
-    res = get_match_results()
-    fix = get_fixtures()
-    result: dict[int, str] = {}
-    if res.empty or fix.empty or "match_number" not in res.columns:
-        return result
-    for _, r in res.iterrows():
-        mn = int(pd.to_numeric(r.get("match_number", 0), errors="coerce") or 0)
-        if mn < 73 or mn == 103:
-            continue
-        fx = fix[fix["match_number"] == mn]
-        if fx.empty:
-            continue
-        f   = fx.iloc[0]
-        hh  = str(f["home_team"]); ha = str(f["away_team"])
-        hg  = int(float(r.get("home_goals", 0) or 0))
-        ag  = int(float(r.get("away_goals", 0) or 0))
-        pw  = str(r.get("penalty_winner", "") or "").strip()
-        if pw == "home" or (not pw and hg > ag):
-            result[mn] = hh
-        elif pw == "away" or (not pw and ag > hg):
-            result[mn] = ha
-    return result
 
 
 def _snapshot_score_history() -> None:

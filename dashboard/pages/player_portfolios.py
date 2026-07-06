@@ -130,16 +130,27 @@ if not captains.empty:
     kn_cap_team  = kc.iloc[0]["Team"] if not kc.empty else ""
 
 # Round Reached helper
-ROUND_LABELS = {
+_ELIM_LABELS = {
     "GroupStage": "Eliminated (Groups)",
     "R32":        "Eliminated (Round of 32)",
-    "R16":        "Round of 16",
-    "QF":         "Quarter-Final",
-    "SF":         "Semi-Final",
-    "Final":      "Final",
+    "R16":        "Eliminated (Round of 16)",
+    "QF":         "Eliminated (Quarter-final)",
+    "SF":         "Eliminated (Semi-final)",
+    "Final":      "Runner-up",
     "Winner":     "Champion",
-    "":           "Active",
 }
+_ALIVE_LABELS = {
+    "R16":    "Active – Round of 16",
+    "QF":     "Active – Quarter-final",
+    "SF":     "Active – Semi-final",
+    "Final":  "Finalist",
+    "Winner": "Champion",
+}
+
+def _status_label(rnd: str, eliminated: bool) -> str:
+    if eliminated:
+        return _ELIM_LABELS.get(rnd, "Eliminated")
+    return _ALIVE_LABELS.get(rnd, "Active")
 
 def _round_reached(team: str) -> str:
     if match_stats.empty:
@@ -281,7 +292,7 @@ with col_teams:
             cap_tag = (cap_tag + " + KO").lstrip(" + ") if cap_tag else "★ KO"
 
         tier_col   = TIER_COLORS.get(tier, "#9CA3AF")
-        status_txt = ROUND_LABELS.get(rnd, "🟢 Active")
+        status_txt = _status_label(rnd, eliminated)
         text_alpha = "0.5" if (eliminated and not is_historical) else "1"
         bg_color   = "#17202A" if is_historical else "#1E2937"
         cap_html   = (
@@ -439,7 +450,7 @@ with col_extras:
             _nt_gs_pts  = _nt_tp.get("group_stage", 0)
             _nt_total   = _nt_tp.get("total", 0)
             _nt_rnd     = _round_reached(_nt)
-            _nt_status  = ROUND_LABELS.get(_nt_rnd, "🟢 Active")
+            _nt_status  = _status_label(_nt_rnd, _nt_elim)
             _nt_elim    = _is_eliminated(_nt)
             _nt_op      = "0.5" if _nt_elim else "1"
             st.markdown(
@@ -537,7 +548,11 @@ with col_extras:
         if pp_dark != "—" and not match_stats.empty:
             dh_rnd = _round_reached(pp_dark)
 
-        DARK_HORSE_NEXT = {"": "QF (+15)", "QF": "SF (+30)", "SF": "Final (+40)", "Final": "Win (+50)"}
+        DARK_HORSE_NEXT = {
+            "":     "R32 (+5)",   "R32":   "R16 (+10)",
+            "R16":  "QF (+15)",   "QF":    "SF (+30)",
+            "SF":   "Final (+40)","Final": "Win (+50)",
+        }
 
         # Fixed predictions (winner, runner-up, bronze, golden boot)
         for label, pick, earned, max_pts in [
@@ -560,7 +575,8 @@ with col_extras:
 
         # Dark horse with progressive milestone bars
         dh_next = DARK_HORSE_NEXT.get(dh_rnd, "") if dh_rnd in DARK_HORSE_NEXT else ""
-        dh_status_txt = ROUND_LABELS.get(dh_rnd, "Active") if dh_rnd else "Group Stage / Not yet reached"
+        dh_elim = pp_dark != "—" and pp_dark in _elim_teams
+        dh_status_txt = _status_label(dh_rnd, dh_elim) if dh_rnd else "Not yet reached Round of 32"
         dh_col = "#6EE7B7" if dh_bonus > 0 else "#9CA3AF"
         st.markdown(
             f'<div class="card" style="margin-bottom:0.3rem">'
@@ -577,7 +593,7 @@ with col_extras:
                 f'<span style="background:{"rgba(110,231,183,0.15)" if b <= dh_bonus else "#1E2937"};'
                 f'color:{"#6EE7B7" if b <= dh_bonus else "#4B5563"};'
                 f'font-size:0.65rem;border-radius:4px;padding:2px 6px">{rnd} +{b:.0f}</span>'
-                for rnd, b in [("QF", 15), ("SF", 45), ("Final", 85), ("Win", 135)]
+                for rnd, b in [("R32", 5), ("R16", 15), ("QF", 30), ("SF", 60), ("Final", 100), ("Win", 150)]
             ) +
             f'</div></div>',
             unsafe_allow_html=True,

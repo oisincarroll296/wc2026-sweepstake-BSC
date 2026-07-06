@@ -154,19 +154,40 @@ def _team_ref(raw: str, winner_of: dict, loser_of: dict) -> tuple[str, str]:
 def _build_matches(fixtures_df, results_df) -> dict[int, MatchInfo]:
     result_rows: dict[int, object] = {}
     for _, r in results_df.iterrows():
-        mn = int(r["match_number"])
+        try:
+            mn = int(r["match_number"])
+        except (ValueError, TypeError):
+            continue
         if mn >= 73:
             result_rows[mn] = r
 
     winner_of: dict[int, str] = {}
     loser_of:  dict[int, str] = {}
-    for mn, r in result_rows.items():
+
+    def _resolve(raw: str) -> str:
+        """Resolve 'Winner match X' / 'Runner-up match X' using already-built dicts."""
+        s = str(raw or "").strip()
+        if s.startswith("Winner match "):
+            try:
+                return winner_of.get(int(s.split()[-1]), s)
+            except ValueError:
+                return s
+        if s.startswith("Runner-up match "):
+            try:
+                return loser_of.get(int(s.split()[-1]), s)
+            except ValueError:
+                return s
+        return s
+
+    # Process in sorted order so R32 winners are known before R16 fixtures are read
+    for mn in sorted(result_rows.keys()):
+        r    = result_rows[mn]
         fix_r = fixtures_df[fixtures_df["match_number"] == mn]
         if fix_r.empty:
             continue
         fix  = fix_r.iloc[0]
-        home = str(fix["home_team"])
-        away = str(fix["away_team"])
+        home = _resolve(str(fix["home_team"]))
+        away = _resolve(str(fix["away_team"]))
         hg   = int(r["home_goals"])
         ag   = int(r["away_goals"])
         pw   = str(r.get("penalty_winner", "") or "").strip()
@@ -178,12 +199,15 @@ def _build_matches(fixtures_df, results_df) -> dict[int, MatchInfo]:
 
     out: dict[int, MatchInfo] = {}
     for _, fix in fixtures_df.iterrows():
-        mn = int(fix["match_number"])
+        try:
+            mn = int(fix["match_number"])
+        except (ValueError, TypeError):
+            continue
         if mn < 73:
             continue
 
-        team1, flag1 = _team_ref(str(fix["home_team"]), winner_of, loser_of)
-        team2, flag2 = _team_ref(str(fix["away_team"]), winner_of, loser_of)
+        team1, flag1 = _team_ref(_resolve(str(fix["home_team"])), winner_of, loser_of)
+        team2, flag2 = _team_ref(_resolve(str(fix["away_team"])), winner_of, loser_of)
         day, date    = _fmt_date(str(fix.get("match_date", "")))
         time_        = str(fix.get("kickoff_time", "00:00"))[:5]
         venue        = str(fix.get("venue", "")).strip()
