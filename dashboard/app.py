@@ -19,8 +19,8 @@ for _k in [k for k in sys.modules if k == "src" or k.startswith("src.")]:
 import streamlit as st
 
 st.set_page_config(
-    page_title="WC 2026 Sweepstake",
-    page_icon="⚽",
+    page_title="WC 2026 Sweepstake (BSC)",
+    page_icon="🟠",
     layout="wide",
     initial_sidebar_state="auto",
 )
@@ -29,6 +29,13 @@ st.set_page_config(
 _css = Path(__file__).parent / "assets" / "style.css"
 if _css.exists():
     st.markdown(f"<style>{_css.read_text()}</style>", unsafe_allow_html=True)
+
+st.sidebar.markdown(
+    '<div style="background:#7c3aed;color:#fff;border-radius:6px;'
+    'padding:4px 10px;font-size:0.75rem;font-weight:700;margin-bottom:0.5rem;'
+    'text-align:center">🟠 BSC INSTANCE</div>',
+    unsafe_allow_html=True,
+)
 
 pages = [
     st.Page("pages/home.py",               title="Home",               icon="🏠", default=True),
