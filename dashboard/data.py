@@ -643,7 +643,33 @@ def _recalculate_match_stats() -> None:
         try: return int(float(val or default))
         except Exception: return default
 
-    for _, res in results.iterrows():
+    # Pre-sort results by match_number so KO winners are known before R16+ fixtures
+    # (which store "Winner match X" placeholders) are processed.
+    _sorted_results = sorted(
+        [r for _, r in results.iterrows()],
+        key=lambda r: _int(r.get("match_number", 0)),
+    )
+    _save_winner_of: dict[int, str] = {}  # match_number → winning team name
+
+    def _resolve_team(raw: str) -> str:
+        s = str(raw or "").strip()
+        if s.startswith("Winner match "):
+            try:
+                return _save_winner_of.get(int(s.split()[-1]), s)
+            except ValueError:
+                return s
+        if s.startswith("Runner-up match "):
+            try:
+                mn_ = int(s.split()[-1])
+                # loser = whichever team is NOT the winner for that match
+                return _save_loser_of.get(mn_, s)
+            except ValueError:
+                return s
+        return s
+
+    _save_loser_of: dict[int, str] = {}
+
+    for res in _sorted_results:
         mn = _int(res.get("match_number", 0))
         fix_rows = fixtures[
             pd.to_numeric(fixtures["match_number"], errors="coerce") == mn
@@ -651,8 +677,8 @@ def _recalculate_match_stats() -> None:
         if fix_rows.empty:
             continue
         fix = fix_rows.iloc[0]
-        home = str(fix["home_team"])
-        away = str(fix["away_team"])
+        home = _resolve_team(str(fix["home_team"]))
+        away = _resolve_team(str(fix["away_team"]))
         grp  = str(fix.get("group", "")).strip()
         is_group = bool(grp)
 
@@ -727,6 +753,11 @@ def _recalculate_match_stats() -> None:
                 mask = ms["Team"] == winner
                 if mask.any():
                     ms.loc[mask, upset_col] = ms.loc[mask, upset_col].astype(int) + 1
+
+        # Record winner/loser for resolving later placeholder fixtures
+        if not is_group and winner and loser:
+            _save_winner_of[mn] = winner
+            _save_loser_of[mn]  = loser
 
         # Auto-set RoundReached for knockout matches (both winner and loser)
         if not is_group:
