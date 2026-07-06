@@ -450,8 +450,8 @@ with col_extras:
             _nt_gs_pts  = _nt_tp.get("group_stage", 0)
             _nt_total   = _nt_tp.get("total", 0)
             _nt_rnd     = _round_reached(_nt)
-            _nt_status  = _status_label(_nt_rnd, _nt_elim)
             _nt_elim    = _is_eliminated(_nt)
+            _nt_status  = _status_label(_nt_rnd, _nt_elim)
             _nt_op      = "0.5" if _nt_elim else "1"
             st.markdown(
                 f'<div style="background:#1E2937;border-left:4px solid {_nt_col};border-radius:0 6px 6px 0;'
