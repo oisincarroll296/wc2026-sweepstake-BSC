@@ -414,7 +414,7 @@ def calculate_prediction_points(
         "golden_boot_bonus": 0.0, "dark_horse_bonus": 0.0,
         "total": 0.0,
     }
-    if predictions.empty or not tournament_results:
+    if predictions.empty or tournament_results is None:
         return result
 
     p = predictions[predictions["Player"] == player]
@@ -494,6 +494,11 @@ def calculate_player_points(
         tier_map = dict(zip(df["Team"], df["Tier"].astype(int)))
 
     tr = dict(tournament_results or {})
+    if "dark_horse_rounds" not in tr and not match_stats.empty:
+        tr["dark_horse_rounds"] = {
+            str(row["Team"]): str(row.get("RoundReached", "") or "")
+            for _, row in match_stats.iterrows()
+        }
 
     eff = get_effective_teams(player, assignments, purchases)
     gs_teams = eff["group_stage"]
