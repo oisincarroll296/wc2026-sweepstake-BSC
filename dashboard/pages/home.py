@@ -220,6 +220,33 @@ if not _res_home.empty and not _fix_home.empty and "match_number" in _res_home.c
 def _alive_home(t: str) -> bool:
     return t not in _elim_home
 
+# Build winner-of dict for placeholder resolution ("Winner match X")
+_winner_of_home: dict[int, str] = {}
+if not _res_home.empty and not _fix_home.empty and "match_number" in _res_home.columns:
+    for _, _wr in _res_home.iterrows():
+        _wmn = int(pd.to_numeric(_wr.get("match_number", 0), errors="coerce") or 0)
+        if _wmn < 73 or _wmn == 103:
+            continue
+        _wfix = _fix_home[_fix_home["match_number"] == _wmn]
+        if _wfix.empty:
+            continue
+        _wf  = _wfix.iloc[0]
+        _whh = str(_wf["home_team"]); _wha = str(_wf["away_team"])
+        _whg = int(float(_wr.get("home_goals", 0) or 0))
+        _wag = int(float(_wr.get("away_goals", 0) or 0))
+        _wpw = str(_wr.get("penalty_winner", "") or "").strip()
+        if _wpw == "home" or (not _wpw and _whg > _wag):
+            _winner_of_home[_wmn] = _whh
+        elif _wpw == "away" or (not _wpw and _wag > _whg):
+            _winner_of_home[_wmn] = _wha
+
+def _resolve_home(raw: str) -> str:
+    s = str(raw or "").strip()
+    if s.startswith("Winner match "):
+        mn_ = int(s.split()[-1])
+        return _winner_of_home.get(mn_, s)
+    return s
+
 _pp_home: dict[str, set] = {}
 if not _purch_home.empty:
     for _, _pr in _purch_home.iterrows():
@@ -393,7 +420,7 @@ with col_right:
             )
         else:
             for _, _m in _today_matches.iterrows():
-                _h, _a = _m["home_team"], _m["away_team"]
+                _h, _a = _resolve_home(_m["home_team"]), _resolve_home(_m["away_team"])
                 _hc = "#D4A017" if _h in _owned else "#F5F5F5"
                 _ac = "#D4A017" if _a in _owned else "#F5F5F5"
                 _grp = _m.get("group", "")
@@ -464,7 +491,7 @@ with col_right:
             st.markdown(
                 f'<div class="card" style="padding:0.4rem 0.7rem;margin:0.2rem 0">'
                 f'<span style="color:#F1F5F9;font-weight:600">'
-                f'{_m["home_team"]} <span style="color:#6B7280">vs</span> {_m["away_team"]}</span>'
+                f'{_resolve_home(_m["home_team"])} <span style="color:#6B7280">vs</span> {_resolve_home(_m["away_team"])}</span>'
                 f'<span style="color:#6B7280;font-size:0.72rem;float:right">{_time_str}{_lbl}</span>'
                 f'</div>',
                 unsafe_allow_html=True,
