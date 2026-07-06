@@ -1,11 +1,52 @@
 """Rules — official competition rules and scoring system."""
 import sys
+import json
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from datetime import datetime, timezone
+_p = str(Path(__file__).resolve().parent.parent.parent); sys.path.insert(0, _p) if _p not in sys.path else None
 
 import streamlit as st
 
 from dashboard.components.ui import page_header
+
+_GRP = "#F59E0B"  # amber
+_KO  = "#22D3EE"  # cyan
+
+
+def _badge(color: str, label: str) -> str:
+    return (
+        f'<span style="background:{color}22;border:1px solid {color};border-radius:4px;'
+        f'padding:0.1rem 0.4rem;font-size:0.71rem;color:{color};white-space:nowrap">'
+        f'{label}</span>'
+    )
+
+
+def _fmt_deadline(iso: str) -> str:
+    try:
+        dt = datetime.fromisoformat(iso)
+        return dt.strftime("%d %b, %H:%M").lstrip("0") + " BST"
+    except Exception:
+        return iso
+
+
+_dl_path = Path(__file__).resolve().parent.parent.parent / "data" / "deadlines.json"
+try:
+    _dl = json.loads(_dl_path.read_text(encoding="utf-8"))
+except Exception:
+    _dl = {}
+
+_buy_in_str     = _fmt_deadline(_dl.get("buy_in_deadline", ""))
+_pred_str       = _fmt_deadline(_dl.get("prediction_lock", ""))
+_ninth_str      = _fmt_deadline(_dl.get("ninth_team_draw", ""))
+_res_str        = _fmt_deadline(_dl.get("resurrection_window_close", ""))
+_ko_cap_str     = _fmt_deadline(_dl.get("knockout_captain_deadline", ""))
+_pre_cap_str    = _fmt_deadline(_dl.get("pre_tournament_captain", ""))
+_swap_str       = _fmt_deadline(_dl.get("team_swap_deadline", ""))
+
+_GRP_BADGE  = _badge(_GRP, f"⏰ Deadline: {_buy_in_str}")
+_PRED_BADGE = _badge(_GRP, f"⏰ Deadline: {_pred_str}")
+_KO_BADGE   = _badge(_KO,  f"⏰ Deadline: {_ninth_str}")
+_SWAP_BADGE = _badge(_KO,  f"⏰ Deadline: {_swap_str}")
 
 page_header("Rules", "Official competition rules and scoring system")
 
@@ -74,12 +115,15 @@ with tab_scoring:
 | Runner-Up (2nd place) correct | +20 |
 | Bronze Medal (3rd place) correct | +15 |
 | Golden Boot correct | +25 |
-| Dark Horse reaches QF | +15 |
-| Dark Horse reaches SF | +30 |
+| First Knocked Out correct | +20 |
+| Dark Horse reaches Round of 32 | +5 |
+| Dark Horse reaches Round of 16 | +10 |
+| Dark Horse reaches Quarter-final | +15 |
+| Dark Horse reaches Semi-final | +30 |
 | Dark Horse reaches Final | +40 |
 | Dark Horse wins tournament | +50 |
 """)
-    st.caption("Dark Horse bonuses are cumulative. A Dark Horse that wins earns 15+30+40+50 = **135 pts** total.")
+    st.caption("Dark Horse bonuses are cumulative — each row adds to the previous. A Dark Horse that wins earns 5+10+15+30+40+50 = **150 pts** total.")
 
 # ── PURCHASES ─────────────────────────────────────────────────────────────────
 with tab_purchases:
@@ -87,14 +131,17 @@ with tab_purchases:
         '<div style="background:#1A2535;border:1px solid #2A3A4A;border-radius:8px;'
         'padding:0.85rem 1.1rem;margin-bottom:1.1rem">'
         '<div style="color:#D4A017;font-weight:700;font-size:0.92rem;margin-bottom:0.45rem">'
-        '🛒 How to Buy an Add-On</div>'
+        '💳 How to Buy an Add-On</div>'
         '<div style="color:#E5E7EB;font-size:0.84rem;line-height:1.65">'
-        'Go to the <strong style="color:#D4A017">Shop</strong> page and buy directly — '
-        'purchases are recorded instantly and your budget updates automatically.<br>'
-        '<strong>Prediction Pack</strong> — your picks are entered in the shop at time of purchase.<br>'
-        '<strong>Mulligan / Ninth Team / Resurrection</strong> — purchased in the shop; '
-        'Oisin runs the draw once your payment clears.<br>'
-        '<strong>Captains</strong> — set via your portfolio page before the relevant deadline.'
+        '1. Send the money to the <strong style="color:#D4A017">Shared Revolut Pocket</strong> '
+        'and include what you\'re buying in the transaction message<br>'
+        '2. <strong>Ninth Team</strong> — randomly drawn from surviving teams you don\'t own<br>'
+        '&nbsp;&nbsp;&nbsp;<strong>Resurrection</strong> — you choose which eliminated team to replace; '
+        'a same-tier replacement is chosen by you and recorded by admin'
+        '<br>'
+        '3. <strong>Prediction Pack</strong> — send your picks (World Cup winner, Golden Boot, Dark Horse, etc.) '
+        'in a separate message<br>'
+        '4. <strong>Captains</strong> — send your Pre-Tournament and Knockout captain picks separately'
         '</div></div>',
         unsafe_allow_html=True,
     )
@@ -102,32 +149,45 @@ with tab_purchases:
 
     with col1:
         st.markdown(
-            '<div class="card"><h4 style="color:#D4A017;margin:0">Buy In — €5</h4>'
-            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.4rem 0 0">'
+            f'<div class="card"><div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.1rem">'
+            f'<h4 style="color:#D4A017;margin:0">Buy In — €5</h4>{_GRP_BADGE}</div>'
+            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0">'
             'Entry into the competition. Required to receive prizes. '
             'You still appear on the Overall Leaderboard without it, but are excluded from prize money.</p></div>',
             unsafe_allow_html=True,
         )
         st.markdown(
-            '<div class="card"><h4 style="color:#D4A017;margin:0">Prediction Pack — €5</h4>'
-            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.4rem 0 0">'
-            'Unlocks five predictions: World Cup Winner (+30), Runner-Up (+20), '
-            'Bronze Medal (+15), Golden Boot (+25), and Dark Horse (up to +135 cumulative). '
-            '<strong style="color:#D4A017">Lock: 28 Jun</strong> (before knockout stage).</p></div>',
+            f'<div class="card"><div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.1rem">'
+            f'<h4 style="color:#D4A017;margin:0">Prediction Pack — €5</h4>{_PRED_BADGE}</div>'
+            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0">'
+            'Unlocks six predictions: World Cup Winner (+30), Runner-Up (+20), '
+            'Bronze Medal (+15), Golden Boot (+25), First Knocked Out (+20), and Dark Horse (up to +150 cumulative). '
+            f'<strong style="color:#D4A017">Predictions lock: {_pred_str}</strong> (before knockout stage).</p></div>',
             unsafe_allow_html=True,
         )
         st.markdown(
-            '<div class="card"><h4 style="color:#D4A017;margin:0">Mulligan — €3</h4>'
-            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.4rem 0 0">'
-            'Complete redraw of all 12 teams before the tournament starts. '
+            f'<div class="card"><div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.1rem">'
+            f'<h4 style="color:#D4A017;margin:0">Mulligan — €3</h4>{_GRP_BADGE}</div>'
+            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0">'
+            'Complete redraw of player\'s 8 teams before the tournament starts. '
             'Must satisfy all allocation rules. Multiple allowed per player. '
             'All mulligans processed in batches depending on how many are bought.</p></div>',
             unsafe_allow_html=True,
         )
+        st.markdown(
+            f'<div class="card"><div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.1rem">'
+            f'<h4 style="color:#D4A017;margin:0">Complete Redraw — €6</h4>{_GRP_BADGE}</div>'
+            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0">'
+            'Full redraw of everybody\'s 8 teams. Includes tier-balancing. '
+            '<strong style="color:#D4A017">Must be completed before the first game kicks off.</strong></p></div>',
+            unsafe_allow_html=True,
+        )
+
     with col2:
         st.markdown(
-            '<div class="card"><h4 style="color:#D4A017;margin:0">Insurance — €2</h4>'
-            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.4rem 0 0">'
+            f'<div class="card"><div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.1rem">'
+            f'<h4 style="color:#D4A017;margin:0">Insurance — €2</h4>{_GRP_BADGE}</div>'
+            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0">'
             'If either of your original Tier 1 teams is eliminated in the '
             '<strong>Group Stage or Round of 32</strong>, '
             'you receive <strong>+25 points</strong>. Triggers for each team knocked out early '
@@ -136,29 +196,35 @@ with tab_purchases:
             unsafe_allow_html=True,
         )
         st.markdown(
-            '<div class="card"><h4 style="color:#D4A017;margin:0">Ninth Team — €3</h4>'
-            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.4rem 0 0">'
+            f'<div class="card"><div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.1rem">'
+            f'<h4 style="color:#D4A017;margin:0">Ninth Team — €3</h4>{_KO_BADGE}</div>'
+            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0">'
             'After the Group Stage, receive one random surviving team you don\'t already own. '
             'Added to your roster for knockout rounds only. '
-            'Can be selected as Knockout Captain.</p></div>',
+            f'Can be selected as Knockout Captain. '
+            f'<strong style="color:#D4A017">Draw: {_ninth_str}</strong>.</p></div>',
             unsafe_allow_html=True,
         )
         st.markdown(
-            '<div class="card"><h4 style="color:#D4A017;margin:0">Resurrection — €3</h4>'
-            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.4rem 0 0">'
-            'You <strong>choose which of your eliminated teams</strong> gets swapped out. '
-            'A replacement is randomly drawn from surviving teams of the same tier. '
-            'Replacement earns knockout points only. Maximum one per player.</p></div>',
+            f'<div class="card"><div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.1rem">'
+            f'<h4 style="color:#D4A017;margin:0">Resurrection — €3</h4>'
+            f'{_badge(_KO, f"⏰ Deadline: {_res_str}")}</div>'
+            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0">'
+            'You <strong>choose which of your eliminated teams</strong> gets swapped out, '
+            '<strong>and you also choose the replacement</strong> from surviving same-tier teams you don\'t own. '
+            f'Replacement earns knockout points only. Maximum one per player. '
+            f'<strong style="color:#D4A017">Window closes: {_res_str}</strong>.</p></div>',
             unsafe_allow_html=True,
         )
         st.markdown(
-            '<div class="card"><h4 style="color:#D4A017;margin:0">Team Swap — €5</h4>'
-            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.4rem 0 0">'
-            'Two players exchange their entire roster — all teams swap. '
-            'The player who <strong>chose</strong> the swap pays €5. '
+            f'<div class="card"><div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.1rem">'
+            f'<h4 style="color:#D4A017;margin:0">Team Swap — €5</h4>{_SWAP_BADGE}</div>'
+            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0">'
+            'Two players exchange their entire roster — all 8 teams swap. The player who <strong>chose</strong> the swap pays €5. '
             '<strong>Points already earned are not transferred</strong> — only future points from the swapped teams count. '
-            'Each set of teams can only be swapped once — first come, first served. Send the admin a message to lock in. '
-            'Your Ninth Team and Resurrection follow your updated roster.</p></div>',
+            'Each set of 8 teams can only be swapped once — first come, first served. Send Oisin a message to lock in. '
+            'Your Ninth Team and Resurrection follow your updated roster.'
+            f'<strong style="color:#D4A017"> Deadline: {_swap_str}</strong>.</p></div>',
             unsafe_allow_html=True,
         )
 
@@ -168,14 +234,16 @@ with tab_purchases:
 - Must be a **Tier 3 or Tier 4** team
 - Cannot be a team you already own
 
-| Achievement | Bonus |
+| Achievement | Bonus (cumulative total) |
 |---|---|
-| Reaches Quarter Final | +15 |
-| Reaches Semi Final | +30 |
-| Reaches Final | +40 |
-| Wins Tournament | +50 |
+| Reaches Round of 32 | +5 (total: 5) |
+| Reaches Round of 16 | +10 (total: 15) |
+| Reaches Quarter-final | +15 (total: 30) |
+| Reaches Semi-final | +30 (total: 60) |
+| Reaches Final | +40 (total: 100) |
+| Wins Tournament | +50 (total: 150) |
 
-Bonuses are cumulative. A Dark Horse that reaches the Final earns **15 + 30 + 40 = 85 pts**. World Cup winner earns **135 pts**.
+Bonuses are cumulative — each round adds to the previous. A Dark Horse that reaches the Final earns **150 pts** if they win.
 """)
 
 # ── CAPTAINS ──────────────────────────────────────────────────────────────────
@@ -184,8 +252,8 @@ with tab_captains:
     with col1:
         st.markdown(
             '<div class="card-gold"><h4 style="color:#D4A017;margin:0">Pre-Tournament Captain</h4>'
-            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.5rem 0 0">Free · Must be one of your original 12 teams · '
-            'Selected before the opening match</p>'
+            f'<p style="color:#9CA3AF;font-size:0.88rem;margin:0.5rem 0 0">Free · Must be one of your original 8 teams · '
+            f'<strong style="color:#D4A017">Deadline: {_pre_cap_str}</strong></p>'
             '<p style="color:#F5F5F5;margin:0.5rem 0 0">'
             'That team earns <strong>1.5× every point it scores</strong> across the entire tournament — '
             'goals, clean sheets, wins, hat tricks, penalty/comeback wins, upset bonuses, '
@@ -196,8 +264,8 @@ with tab_captains:
     with col2:
         st.markdown(
             '<div class="card-gold"><h4 style="color:#D4A017;margin:0">Knockout Captain</h4>'
-            '<p style="color:#9CA3AF;font-size:0.88rem;margin:0.5rem 0 0">Free · Any surviving team you own · '
-            'Selected before the Round of 32</p>'
+            f'<p style="color:#9CA3AF;font-size:0.88rem;margin:0.5rem 0 0">Free · Any surviving team you own · '
+            f'<strong style="color:#D4A017">Deadline: {_ko_cap_str}</strong></p>'
             '<p style="color:#F5F5F5;margin:0.5rem 0 0">'
             'That team earns <strong>1.5× every point it scores in the knockout rounds</strong> (Round of 32 onward) — '
             'goals, clean sheets, wins, hat tricks, penalty/comeback wins, upset bonuses, and '
@@ -224,7 +292,7 @@ with tab_prizes:
     st.markdown("""
 **Prize Leaderboard** — Paid players only. These are the standings that determine prize money.
 
-**Overall Leaderboard** — All 7 players. Players without a Buy In are shown greyed out and cannot win prizes.
+**Overall Leaderboard** — All 14 players. Players without a Buy In are shown greyed out and cannot win prizes.
 """)
 
 # ── TIEBREAKERS ───────────────────────────────────────────────────────────────

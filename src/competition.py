@@ -1,8 +1,6 @@
 """Competition logic layer for World Cup 2026 Sweepstake."""  # cache-bust 2026-06-23
-
-import os
+# v2 — includes load_swaps, execute_team_swap
 import random
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -26,9 +24,10 @@ DATA_DIR  = _ROOT / "data"
 EXPORTS_DIR = _ROOT / "exports"
 
 PLAYER_STATUS_PATH = DATA_DIR / "players.csv"
-PURCHASES_PATH     = DATA_DIR / "purchases.csv"
 EVENTS_PATH        = DATA_DIR / "events.csv"
 AUDIT_LOG_PATH     = DATA_DIR / "audit_log.csv"
+SWAPS_PATH         = DATA_DIR / "swaps.csv"
+SWAP_OFFSETS_PATH  = DATA_DIR / "swap_offsets.csv"
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -56,9 +55,6 @@ PRICES: dict[str, float] = {
     "Insurance":      2.0,
     "TeamSwap":       5.0,
 }
-
-SWAPS_PATH        = DATA_DIR / "swaps.csv"
-SWAP_OFFSETS_PATH = DATA_DIR / "swap_offsets.csv"
 
 PRIZE_SHARES = (0.50, 0.30, 0.20)   # 1st, 2nd, 3rd
 
@@ -88,22 +84,6 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
-def atomic_csv_write(df: pd.DataFrame, path: "Path | str") -> None:
-    """Write a DataFrame to CSV atomically via temp-file + os.replace."""
-    path = Path(path)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
-    try:
-        os.close(fd)
-        df.to_csv(tmp, index=False)
-        os.replace(tmp, path)
-    except Exception:
-        try:
-            os.unlink(tmp)
-        except Exception:
-            pass
-        raise
-
-
 def _safe_int(val: object) -> int:
     try:
         if val is None:
@@ -121,34 +101,83 @@ def load_player_status(path: Optional[Path | str] = None) -> pd.DataFrame:
     p = Path(path) if path else PLAYER_STATUS_PATH
     if not p.exists():
         return pd.DataFrame(columns=[
-            "Player", "Status", "PaidTimestamp",
+            "Player", "Status", "PaidTimestamp", "Budget",
             "PreTournamentCaptain", "KnockoutCaptain",
             "WorldCupWinner", "GoldenBoot", "DarkHorse",
         ])
-    return pd.read_csv(p, dtype=str).fillna("")
+    df = pd.read_csv(p, dtype=str).fillna("")
+    if "Budget" not in df.columns:
+        df["Budget"] = "0.0"
+    return df
+
+
+_PURCHASE_FLAG_COLS = [
+    "BuyIn", "PredictionPack", "Mulligan", "CompleteRedraw",
+    "NinthTeam", "Resurrection", "Insurance",
+]
+_SELECTION_COLS = {"NinthTeam": "NinthTeamSelection", "Resurrection": "ResurrectionSelection"}
 
 
 def load_purchases(path: Optional[Path | str] = None) -> pd.DataFrame:
-    p = Path(path) if path else PURCHASES_PATH
-    if not p.exists():
-        return pd.DataFrame(columns=["Player", "PurchaseType", "Selection", "Reference", "Timestamp"])
-    return pd.read_csv(p, dtype=str).fillna("")
+    """Derive the purchases DataFrame from players.csv flag columns plus swaps.csv.
+
+    The path argument is accepted for backward compatibility but ignored.
+    Scoring engine and event engine receive the same DataFrame shape as before.
+    """
+    players = load_player_status()
+    _COLS = ["Player", "PurchaseType", "Selection", "Reference", "Timestamp"]
+    rows: list[dict] = []
+    if not players.empty:
+        for _, row in players.iterrows():
+            p = str(row.get("Player", ""))
+            if not p:
+                continue
+            for col in _PURCHASE_FLAG_COLS:
+                if str(row.get(col, "0")).strip() in ("1", "True", "true"):
+                    sel = str(row.get(_SELECTION_COLS[col], "") or "") if col in _SELECTION_COLS else ""
+                    rows.append({"Player": p, "PurchaseType": col, "Selection": sel,
+                                  "Reference": "", "Timestamp": ""})
+    # Include TeamSwap entries from swaps.csv (initiator pays €8)
+    swaps = load_swaps()
+    if not swaps.empty:
+        for _, row in swaps.iterrows():
+            init = str(row.get("Initiator", "")).strip()
+            ctrp = str(row.get("Counterpart", "")).strip()
+            ts   = str(row.get("Timestamp", "")).strip()
+            if init:
+                rows.append({"Player": init, "PurchaseType": "TeamSwap",
+                              "Selection": ctrp,
+                              "Reference": "", "Timestamp": ts})
+    return pd.DataFrame(rows, columns=_COLS) if rows else pd.DataFrame(columns=_COLS)
 
 
-def load_events(path: Optional[Path | str] = None) -> pd.DataFrame:
-    p = Path(path) if path else EVENTS_PATH
-    if not p.exists():
-        return pd.DataFrame(columns=[
-            "EventID", "EventType", "ScheduledTime", "ExecutedTime", "Status", "RandomSeed",
-        ])
-    return pd.read_csv(p, dtype=str).fillna("")
-
-
-def load_audit_log(path: Optional[Path | str] = None) -> pd.DataFrame:
-    p = Path(path) if path else AUDIT_LOG_PATH
-    if not p.exists():
-        return pd.DataFrame(columns=["Timestamp", "Event", "Player", "Action", "Result"])
-    return pd.read_csv(p, dtype=str).fillna("")
+def save_purchases_to_players(purchases: pd.DataFrame, players: pd.DataFrame) -> pd.DataFrame:
+    """Sync a purchases-format DataFrame back into players.csv flag columns."""
+    players = players.copy()
+    for col in _PURCHASE_FLAG_COLS:
+        if col not in players.columns:
+            players[col] = 0
+    for sel_col in _SELECTION_COLS.values():
+        if sel_col not in players.columns:
+            players[sel_col] = ""
+    # Reset
+    for col in _PURCHASE_FLAG_COLS:
+        players[col] = 0
+    for sel_col in _SELECTION_COLS.values():
+        players[sel_col] = ""
+    # Apply
+    if not purchases.empty:
+        for _, row in purchases.iterrows():
+            p_name = str(row.get("Player", ""))
+            ptype  = str(row.get("PurchaseType", ""))
+            sel    = str(row.get("Selection", "") or "")
+            mask   = players["Player"] == p_name
+            if not mask.any() or ptype not in _PURCHASE_FLAG_COLS:
+                continue
+            players.loc[mask, ptype] = 1
+            if ptype in _SELECTION_COLS:
+                players.loc[mask, _SELECTION_COLS[ptype]] = sel
+    return players
 
 
 def load_swaps(path: Optional[Path | str] = None) -> pd.DataFrame:
@@ -195,23 +224,21 @@ def execute_team_swap(
     initiator: str,
     counterpart: str,
     allocation_path: Path,
-    purchases_path: Path,
     swaps: pd.DataFrame,
     audit_log: pd.DataFrame,
     swap_offsets: Optional[pd.DataFrame] = None,
     timestamp: Optional[str] = None,
     match_stats: Optional[pd.DataFrame] = None,
     tier_map: Optional[dict[str, int]] = None,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, list[str]]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, list[str]]:
     """Swap ALL teams between two players, modifying allocation.csv in place.
 
     Snapshots each team's current points into swap_offsets so scoring can
     exclude pre-swap points from the new owner's total.
 
-    Returns (updated_purchases, updated_swaps, updated_swap_offsets, updated_audit_log, errors).
+    Returns (updated_swaps, updated_swap_offsets, updated_audit_log, errors).
     """
     errors: list[str] = []
-    empty_offsets = swap_offsets if swap_offsets is not None else load_swap_offsets()
 
     already_swapped = get_swapped_players(swaps)
     if initiator in already_swapped:
@@ -219,10 +246,12 @@ def execute_team_swap(
     if counterpart in already_swapped:
         errors.append(f"{counterpart!r} has already done a swap and cannot swap again")
     if errors:
-        return pd.DataFrame(), swaps, empty_offsets, audit_log, errors
+        empty_offsets = swap_offsets if swap_offsets is not None else load_swap_offsets()
+        return swaps, empty_offsets, audit_log, errors
 
     if not allocation_path.exists():
-        return pd.DataFrame(), swaps, empty_offsets, audit_log, ["allocation.csv not found"]
+        empty_offsets = swap_offsets if swap_offsets is not None else load_swap_offsets()
+        return swaps, empty_offsets, audit_log, ["allocation.csv not found"]
 
     alloc = pd.read_csv(allocation_path, dtype=str).fillna("")
     mask_i = alloc["Player"] == initiator
@@ -232,7 +261,8 @@ def execute_team_swap(
     if not mask_c.any():
         errors.append(f"{counterpart!r} has no teams in allocation.csv")
     if errors:
-        return pd.DataFrame(), swaps, empty_offsets, audit_log, errors
+        empty_offsets = swap_offsets if swap_offsets is not None else load_swap_offsets()
+        return swaps, empty_offsets, audit_log, errors
 
     # Snapshot current points for each team before the swap
     ts = timestamp or _now_iso()
@@ -240,7 +270,7 @@ def execute_team_swap(
         swap_offsets = load_swap_offsets()
 
     if match_stats is not None and tier_map is not None:
-        initiator_teams   = alloc.loc[mask_i, "Team"].tolist()
+        initiator_teams  = alloc.loc[mask_i, "Team"].tolist()
         counterpart_teams = alloc.loc[mask_c, "Team"].tolist()
         offset_rows = []
         for team in initiator_teams:
@@ -268,38 +298,30 @@ def execute_team_swap(
     alloc.loc[alloc["Player"] == "__TEMP__", "Player"] = counterpart
     alloc.to_csv(allocation_path, index=False)
 
-    # Add TeamSwap purchase for initiator (budget tracking)
-    _PCOLS = ["Player", "PurchaseType", "Selection", "Reference", "Timestamp"]
-    purchases = load_purchases(purchases_path)
-    new_purch = pd.DataFrame([{
-        "Player": initiator, "PurchaseType": "TeamSwap",
-        "Selection": counterpart, "Reference": "", "Timestamp": ts,
-    }])
-    purchases = pd.concat([purchases, new_purch], ignore_index=True)
-    for col in _PCOLS:
-        if col not in purchases.columns:
-            purchases[col] = ""
-    purchases = purchases[_PCOLS]
-    purchases.to_csv(purchases_path, index=False)
-
     new_swap = {"Initiator": initiator, "Counterpart": counterpart, "Timestamp": ts}
     swaps = pd.concat([swaps, pd.DataFrame([new_swap])], ignore_index=True)
+    audit_log = log_action(
+        "TEAM_SWAP", initiator,
+        f"FULL ROSTER SWAP {initiator} ↔ {counterpart}",
+        "allocation.csv updated", audit_log, ts,
+    )
+    return swaps, swap_offsets, audit_log, []
 
-    # Append audit log entry
-    _al_cols = ["Timestamp", "Event", "Player", "Action", "Result"]
-    new_al = pd.DataFrame([{
-        "Timestamp": ts, "Event": "TEAM_SWAP", "Player": initiator,
-        "Action": f"FULL ROSTER SWAP {initiator} ↔ {counterpart}",
-        "Result": "allocation.csv updated",
-    }])
-    audit_log = pd.concat([audit_log, new_al], ignore_index=True)
-    for col in _al_cols:
-        if col not in audit_log.columns:
-            audit_log[col] = ""
-    audit_log = audit_log[_al_cols]
 
-    return purchases, swaps, swap_offsets, audit_log, []
+def load_events(path: Optional[Path | str] = None) -> pd.DataFrame:
+    p = Path(path) if path else EVENTS_PATH
+    if not p.exists():
+        return pd.DataFrame(columns=[
+            "EventID", "EventType", "ScheduledTime", "ExecutedTime", "Status", "RandomSeed",
+        ])
+    return pd.read_csv(p, dtype=str).fillna("")
 
+
+def load_audit_log(path: Optional[Path | str] = None) -> pd.DataFrame:
+    p = Path(path) if path else AUDIT_LOG_PATH
+    if not p.exists():
+        return pd.DataFrame(columns=["Timestamp", "Event", "Player", "Action", "Result"])
+    return pd.read_csv(p, dtype=str).fillna("")
 
 # ---------------------------------------------------------------------------
 # Player status
@@ -321,7 +343,7 @@ def mark_paid(
     """Return updated statuses with player set to PAID."""
     ts = timestamp or _now_iso()
     df = statuses.copy() if not statuses.empty else pd.DataFrame(
-        columns=["Player", "Status", "PaidTimestamp"]
+        columns=["Player", "Status", "PaidTimestamp", "Budget"]
     )
     mask = df["Player"] == player
     if mask.any():
@@ -329,7 +351,7 @@ def mark_paid(
         df.loc[mask, "PaidTimestamp"] = ts
     else:
         df = pd.concat(
-            [df, pd.DataFrame([{"Player": player, "Status": "PAID", "PaidTimestamp": ts}])],
+            [df, pd.DataFrame([{"Player": player, "Status": "PAID", "PaidTimestamp": ts, "Budget": "0.0"}])],
             ignore_index=True,
         )
     return df
@@ -338,7 +360,7 @@ def mark_paid(
 def mark_unpaid(player: str, statuses: pd.DataFrame) -> pd.DataFrame:
     """Return updated statuses with player set to UNPAID."""
     df = statuses.copy() if not statuses.empty else pd.DataFrame(
-        columns=["Player", "Status", "PaidTimestamp"]
+        columns=["Player", "Status", "PaidTimestamp", "Budget"]
     )
     mask = df["Player"] == player
     if mask.any():
@@ -346,7 +368,7 @@ def mark_unpaid(player: str, statuses: pd.DataFrame) -> pd.DataFrame:
         df.loc[mask, "PaidTimestamp"] = ""
     else:
         df = pd.concat(
-            [df, pd.DataFrame([{"Player": player, "Status": "UNPAID", "PaidTimestamp": ""}])],
+            [df, pd.DataFrame([{"Player": player, "Status": "UNPAID", "PaidTimestamp": "", "Budget": "0.0"}])],
             ignore_index=True,
         )
     return df
@@ -436,47 +458,62 @@ def parse_payment_reference(reference: str) -> dict:
 # Prize pool
 # ---------------------------------------------------------------------------
 
-def calculate_prize_pool_from_budgets(players_df: pd.DataFrame) -> dict:
-    """Prize pool = sum of player budgets (total Revolut contributions).
+def calculate_prize_pool(statuses: pd.DataFrame) -> dict:
+    """Sum Budget values from players.csv and return prize distribution.
+
+    Prize pool = sum of all player Budget fields (money actually contributed
+    to the Revolut pocket).  Managed manually by admin via the Budget tab.
 
     Returns {current_pot, first_prize, second_prize, third_prize}.
     """
-    total = 0.0
-    if not players_df.empty and "Budget" in players_df.columns:
-        total = float(pd.to_numeric(players_df["Budget"], errors="coerce").fillna(0).sum())
-    return {
-        "current_pot":  total,
-        "first_prize":  round(total * PRIZE_SHARES[0], 2),
-        "second_prize": round(total * PRIZE_SHARES[1], 2),
-        "third_prize":  round(total * PRIZE_SHARES[2], 2),
-    }
-
-
-def calculate_prize_pool(purchases: pd.DataFrame) -> dict:
-    """Sum all purchase fees and return prize distribution.
-
-    Returns {current_pot, first_prize, second_prize, third_prize}.
-    """
-    if purchases.empty:
+    if statuses.empty or "Budget" not in statuses.columns:
         total = 0.0
     else:
-        total = float(purchases["PurchaseType"].map(PRICES).fillna(0.0).sum())
+        total = float(
+            pd.to_numeric(statuses["Budget"], errors="coerce").fillna(0.0).sum()
+        )
 
     return {
-        "current_pot":  total,
+        "current_pot":  round(total, 2),
         "first_prize":  round(total * PRIZE_SHARES[0], 2),
         "second_prize": round(total * PRIZE_SHARES[1], 2),
         "third_prize":  round(total * PRIZE_SHARES[2], 2),
     }
+
+
+def calculate_player_spend(player: str, purchases: pd.DataFrame) -> float:
+    """Total spend for one player derived from their logged purchases × price."""
+    if purchases.empty:
+        return 0.0
+    p = purchases[purchases["Player"] == player]
+    if p.empty:
+        return 0.0
+    return float(p["PurchaseType"].map(PRICES).fillna(0.0).sum())
+
+
+def calculate_player_available_budget(
+    player: str,
+    statuses: pd.DataFrame,
+    purchases: pd.DataFrame,
+) -> float:
+    """Available spend = Budget minus logged purchase amounts."""
+    if statuses.empty:
+        return 0.0
+    row = statuses[statuses["Player"] == player]
+    if row.empty:
+        return 0.0
+    budget = float(pd.to_numeric(row.iloc[0].get("Budget", 0), errors="coerce") or 0.0)
+    spent = calculate_player_spend(player, purchases)
+    return round(budget - spent, 2)
 
 
 def export_prize_pool(
-    purchases: pd.DataFrame,
+    statuses: pd.DataFrame,
     path: Optional[Path | str] = None,
 ) -> pd.DataFrame:
     out = Path(path) if path else EXPORTS_DIR / "prize_pool.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
-    pool = calculate_prize_pool(purchases)
+    pool = calculate_prize_pool(statuses)
     df = pd.DataFrame([{
         "CurrentPot": pool["current_pot"], "FirstPrize":  pool["first_prize"],
         "SecondPrize": pool["second_prize"], "ThirdPrize": pool["third_prize"],
@@ -612,7 +649,7 @@ def validate_resurrection(
         row = match_stats[match_stats["Team"] == eliminated_team]
         if not row.empty:
             rr = str(row.iloc[0].get("RoundReached", "") or "").strip()
-            if rr and rr != "GroupStage":
+            if rr and rr not in {"GroupStage", "R32"}:
                 errors.append(f"{eliminated_team!r} has not been eliminated (round={rr!r})")
 
     elim_tier = tier_map.get(eliminated_team)
