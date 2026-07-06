@@ -1,14 +1,13 @@
 """Admin page — password-protected event and draw controls."""
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+_p = str(Path(__file__).resolve().parent.parent.parent); sys.path.insert(0, _p) if _p not in sys.path else None
 
 import streamlit as st
 import pandas as pd
 
 from dashboard.config import ADMIN_PASSWORD
 from dashboard.components.ui import page_header, copyable_text
-from dashboard.github_sync import push_file, push_data_files
 
 ROOT = Path(__file__).parent.parent.parent
 DATA = ROOT / "data"
@@ -29,55 +28,35 @@ if pwd != ADMIN_PASSWORD:
     st.stop()
 
 st.success("Authenticated", icon="🔓")
-
-# ── Publish to Live ───────────────────────────────────────────────────────
-_ALL_DATA_FILES = [
-    "purchases.csv", "players.csv", "allocation.csv",
-    "events.csv", "audit_log.csv",
-    "match_results.csv", "match_stats.csv", "score_history.csv",
-    "deadlines.json", "tournament_results.json",
-]
-
-if st.button("🚀 Publish All Data to Live", type="primary"):
-    with st.spinner("Pushing data files to GitHub…"):
-        _ok, _fail = [], []
-        for _fn in _ALL_DATA_FILES:
-            _lp = DATA / _fn
-            if not _lp.exists():
-                continue
-            try:
-                if push_file(_lp, f"data/{_fn}", f"Admin publish: {_fn}"):
-                    _ok.append(_fn)
-                else:
-                    _fail.append(_fn)
-            except Exception as _e:
-                _fail.append(f"{_fn} ({_e})")
-    if _ok:
-        st.success(f"Published {len(_ok)} file(s): {', '.join(_ok)}")
-    if _fail:
-        st.warning(f"Skipped / failed: {', '.join(_fail)}")
-    if not _ok and not _fail:
-        st.info("No data files found to publish.")
-
 st.divider()
+
+
+from dashboard.github_sync import push_file as _push_gh
 
 
 def _refresh():
     st.cache_data.clear()
 
 
-def _sync(*filenames: str) -> None:
-    push_data_files(DATA, *filenames)
+def _push(local, repo_path: str, msg: str) -> None:
+    try:
+        _push_gh(local, repo_path, msg)
+    except Exception as _e:
+        st.warning(f"⚠️ GitHub sync: {_e}")
 
 
-def _save_purchases(df: pd.DataFrame):
+def _save_purchases(df: pd.DataFrame, msg: str = "Update purchases"):
+    from src.competition import save_purchases_to_players, load_player_status
     df.to_csv(DATA / "purchases.csv", index=False)
-    _sync("purchases.csv")
+    _push(DATA / "purchases.csv", "data/purchases.csv", msg)
+    _pl = load_player_status()
+    _pl = save_purchases_to_players(df, _pl)
+    _save_statuses(_pl, msg)
 
 
-def _save_statuses(df: pd.DataFrame):
+def _save_statuses(df: pd.DataFrame, msg: str = "Update players.csv"):
     df.to_csv(DATA / "players.csv", index=False)
-    _sync("players.csv")
+    _push(DATA / "players.csv", "data/players.csv", msg)
 
 
 # ── Tabs ──────────────────────────────────────────────────────────────────
@@ -92,53 +71,6 @@ tabs = st.tabs([
 # Tab 0: Draw Events
 # ─────────────────────────────────────────────
 with tabs[0]:
-    # ── Pending draws queue ───────────────────────────────────────────────
-    st.subheader("Pending Draws")
-    st.caption("Players who have paid for a draw-based add-on but whose draw has not been run yet.")
-
-    from src.competition import load_purchases as _lpq, load_audit_log as _lalq
-
-    _pq   = _lpq()
-    _alq  = _lalq()
-
-    _pending: list[dict] = []
-
-    if not _pq.empty:
-        # Mulligan: purchase count > MULLIGAN_EXECUTED count in audit log
-        _mul = _pq[_pq["PurchaseType"] == "Mulligan"].groupby("Player").size()
-        _mul_done: dict = {}
-        if not _alq.empty and "Action" in _alq.columns:
-            _mul_done = _alq[_alq["Action"] == "MULLIGAN_EXECUTED"].groupby("Player").size().to_dict()
-        for _pp, _cnt in _mul.items():
-            _remaining_cnt = _cnt - _mul_done.get(_pp, 0)
-            for _ in range(_remaining_cnt):
-                _pending.append({"Player": _pp, "Add-on": "Mulligan", "Action needed": "Run MULLIGAN_DRAW"})
-
-        # NinthTeam: purchases where Selection is empty (draw not yet run)
-        _nth = _pq[(_pq["PurchaseType"] == "NinthTeam") & (_pq["Selection"].fillna("") == "")]
-        for _, _r in _nth.iterrows():
-            _pending.append({"Player": _r["Player"], "Add-on": "Ninth Team", "Action needed": "Run NINTH_TEAM_DRAW"})
-
-        # Resurrection: purchases where Selection has no "->" (replacement not yet drawn)
-        _res = _pq[
-            (_pq["PurchaseType"] == "Resurrection") &
-            (~_pq["Selection"].fillna("").str.contains("->"))
-        ]
-        for _, _r in _res.iterrows():
-            _sel = _r.get("Selection", "") or ""
-            _pending.append({
-                "Player": _r["Player"],
-                "Add-on": "Resurrection",
-                "Action needed": f"Run RESURRECTION_DRAW  (nominated: {_sel or 'not set'})",
-            })
-
-    if _pending:
-        _pend_df = pd.DataFrame(_pending)
-        st.dataframe(_pend_df, use_container_width=True, hide_index=True)
-    else:
-        st.success("No pending draws — all draw-based add-ons are up to date.")
-
-    st.divider()
     st.subheader("Run Draw Events")
 
     st.caption(
@@ -158,6 +90,17 @@ with tabs[0]:
             try:
                 from src.event_engine import run_event
                 result = run_event(event_type, seed=seed)
+                # Push all files that draw events can modify
+                for _f, _r in [
+                    ("allocation.csv",  "data/allocation.csv"),
+                    ("events.csv",      "data/events.csv"),
+                    ("audit_log.csv",   "data/audit_log.csv"),
+                    ("match_stats.csv", "data/match_stats.csv"),
+                    ("players.csv",     "data/players.csv"),
+                ]:
+                    _fp = DATA / _f
+                    if _fp.exists():
+                        _push(_fp, _r, f"{event_type}: update {_f}")
                 st.success(f"{event_type} executed successfully.")
                 if "errors" in result and result["errors"]:
                     st.warning("Some players had errors:")
@@ -170,7 +113,6 @@ with tabs[0]:
                     st.code(result["broadcast"], language=None)
                 if "summary" in result:
                     st.info(result["summary"])
-                _sync("allocation.csv", "events.csv", "audit_log.csv", "purchases.csv", "players.csv")
                 _refresh()
             except Exception as exc:
                 st.error(f"Error: {exc}")
@@ -233,23 +175,26 @@ with tabs[0]:
                     pd.DataFrame(columns=["Player", "Team"]).to_csv(
                         DATA / "allocation.csv", index=False
                     )
+                    _push(DATA / "allocation.csv", "data/allocation.csv", "Clear allocation (draw deleted)")
                 elif _del_type == "NINTH_TEAM_DRAW":
-                    if not _purch.empty and "PurchaseType" in _purch.columns:
-                        mask = _purch["PurchaseType"] == "NinthTeam"
-                        _purch.loc[mask, "Selection"] = ""
-                        _purch.to_csv(DATA / "purchases.csv", index=False)
+                    from src.competition import load_player_status as _lps_undo
+                    _pl_undo = _lps_undo()
+                    if not _pl_undo.empty and "NinthTeamSelection" in _pl_undo.columns:
+                        _pl_undo["NinthTeamSelection"] = ""
+                        _pl_undo.to_csv(DATA / "players.csv", index=False)
+                        _push(DATA / "players.csv", "data/players.csv", "Reset NinthTeam selections")
                 elif _del_type == "RESURRECTION_DRAW":
-                    if not _purch.empty and "PurchaseType" in _purch.columns:
-                        mask = (
-                            (_purch["PurchaseType"] == "Resurrection") &
-                            (_purch["Selection"].str.contains("->", na=False))
-                        )
-                        _purch.loc[mask, "Selection"] = ""
-                        _purch.to_csv(DATA / "purchases.csv", index=False)
+                    from src.competition import load_player_status as _lps_undo
+                    _pl_undo = _lps_undo()
+                    if not _pl_undo.empty and "ResurrectionSelection" in _pl_undo.columns:
+                        _pl_undo["ResurrectionSelection"] = ""
+                        _pl_undo.to_csv(DATA / "players.csv", index=False)
+                        _push(DATA / "players.csv", "data/players.csv", "Reset Resurrection selections")
 
                 # 2. Remove the event row
                 _ev_df_new = _ev_df[_ev_df["EventID"].astype(str) != _del_eid].copy()
                 _ev_df_new.to_csv(DATA / "events.csv", index=False)
+                _push(DATA / "events.csv", "data/events.csv", f"Delete draw event {_del_eid}")
 
                 # 3. Add audit entry
                 from datetime import datetime, timezone, timedelta
@@ -263,8 +208,8 @@ with tabs[0]:
                 }])
                 _audit_new = pd.concat([_audit, _new_log], ignore_index=True)
                 _audit_new.to_csv(DATA / "audit_log.csv", index=False)
+                _push(DATA / "audit_log.csv", "data/audit_log.csv", "Audit: draw deleted")
 
-                _sync("allocation.csv", "purchases.csv", "events.csv", "audit_log.csv")
                 _refresh()
                 st.success(
                     f"{_del_type} deleted. "
@@ -284,73 +229,71 @@ with tabs[0]:
 # ─────────────────────────────────────────────
 with tabs[1]:
     st.subheader("Add Purchase")
-    st.caption("Manually record a purchase made outside the Shop (e.g. cash). For Revolut payments, players use the Shop page directly.")
+    st.caption("Record a payment received via the Shared Revolut Pocket.")
 
     from src.competition import PRICES as _PRICES
     _price_labels = {k: f"{k}  (€{int(v)})" for k, v in _PRICES.items()}
 
-    with st.form("add_purchase"):
-        from dashboard.data import get_participants
-        players = get_participants() or []
-        add_player = st.selectbox("Player", players or ["—"])
-        add_type   = st.selectbox("Type", list(_price_labels.keys()), format_func=lambda k: _price_labels[k])
-        add_ref    = st.text_input("Payment Reference (optional)", placeholder="e.g. Oisin - BUY IN")
-        add_sel    = st.text_input("Resurrection — player's eliminated team to swap out", placeholder="e.g. Spain (you choose which of your eliminated teams to replace)")
-        submitted  = st.form_submit_button("Add Purchase", type="primary")
+    from dashboard.data import get_participants as _gp_adm
+    _adm_players = ["—"] + (_gp_adm() or [])
+    _adm_player = st.selectbox("Player", _adm_players, key="adm_ap_player")
+    _adm_type   = st.selectbox("Type", list(_price_labels.keys()),
+                                format_func=lambda k: _price_labels[k], key="adm_ap_type")
+    _adm_ref    = st.text_input("Payment Reference (optional)",
+                                 placeholder="e.g. Oisin - BUY IN", key="adm_ap_ref")
 
-        if submitted and add_player and add_player != "—":
+    _adm_sel = ""
+    if _adm_type == "Resurrection" and _adm_player and _adm_player != "—":
+        from src.competition import load_purchases as _lp_adm
+        from src.event_engine import resurrection_candidates as _rc_adm
+        from dashboard.data import (get_assignments as _ga_adm, get_match_stats as _gms_adm,
+                                     get_tier_map as _gtm_adm)
+        _assign_adm = _ga_adm()
+        _ms_adm     = _gms_adm()
+        _tm_adm     = _gtm_adm()
+        _pr_adm     = _lp_adm()
+        _pteams_adm = _assign_adm.get(_adm_player, [])
+        _rounds_adm: dict[str, str] = {}
+        if not _ms_adm.empty:
+            for _, _sr_adm in _ms_adm.iterrows():
+                _rounds_adm[str(_sr_adm["Team"])] = str(_sr_adm.get("RoundReached", "") or "").strip()
+        _gs_adm = any(v not in ("", "GroupStage") for v in _rounds_adm.values())
+        if not _gs_adm:
+            st.info("Group stage not yet concluded.")
+        else:
+            _ko_adm = [t for t in _pteams_adm if _rounds_adm.get(t, "") in ("", "GroupStage")]
+            if not _ko_adm:
+                st.info(f"No group-stage knockouts for {_adm_player}.")
+            else:
+                _elim_adm = st.selectbox("Eliminated team to replace", _ko_adm, key="adm_ap_elim")
+                _cands_adm = _rc_adm(_adm_player, _elim_adm, _assign_adm, _ms_adm, _pr_adm, _tm_adm)
+                if not _cands_adm:
+                    st.info("No valid same-tier replacements available.")
+                else:
+                    _repl_adm = st.selectbox("Replacement team", _cands_adm, key="adm_ap_repl")
+                    _adm_sel = f"{_elim_adm}->{_repl_adm}"
+
+    if st.button("Add Purchase", type="primary", key="adm_ap_submit"):
+        if not _adm_player or _adm_player == "—":
+            st.error("Select a player.")
+        elif _adm_type == "Resurrection" and not _adm_sel:
+            st.error("Complete the Resurrection team selections first.")
+        else:
             try:
                 from src.competition import add_purchase, load_purchases, load_player_status
                 from src.event_engine import process_pending_purchases
 
                 p = load_purchases()
                 s = load_player_status()
-                p = add_purchase(add_player, add_type, add_ref, p, selection=add_sel)
+                p = add_purchase(_adm_player, _adm_type, _adm_ref, p, selection=_adm_sel)
 
-                # Mark PAID for BuyIn
                 up, us, _msgs = process_pending_purchases(p, s)
                 _save_purchases(up)
                 _save_statuses(us)
 
-                cost = _PRICES.get(add_type, 0)
-                st.success(f"✓ {add_type} added for {add_player}  (€{int(cost)})")
+                cost = _PRICES.get(_adm_type, 0)
+                st.success(f"✓ {_adm_type} added for {_adm_player}  (€{int(cost)})")
                 _refresh()
-                st.rerun()
-            except Exception as exc:
-                st.error(f"Error: {exc}")
-
-    st.divider()
-
-    # ── Bulk Buy-In ────────────────────────────────────────────────────────
-    st.subheader("Bulk Buy-In")
-    st.caption("Mark every player as paid with a BuyIn purchase in one click. Skips players who already have a BuyIn.")
-
-    from dashboard.data import get_participants as _get_parts
-    from src.competition import add_purchase as _add_purchase, load_purchases as _lp, load_player_status as _ls
-    from src.event_engine import process_pending_purchases as _ppp
-
-    _all_players = _get_parts() or []
-    _existing_p  = _lp()
-    _already_in  = set()
-    if not _existing_p.empty:
-        _already_in = set(_existing_p[_existing_p["PurchaseType"] == "BuyIn"]["Player"].tolist())
-    _needs_buyin = [p for p in _all_players if p not in _already_in]
-
-    if not _needs_buyin:
-        st.success(f"All {len(_all_players)} players already have a BuyIn recorded.")
-    else:
-        st.info(f"{len(_needs_buyin)} player(s) missing BuyIn: {', '.join(_needs_buyin)}")
-        if st.button("Add BuyIn for all missing players", type="primary"):
-            try:
-                _p = _lp()
-                _s = _ls()
-                for _player in _needs_buyin:
-                    _p = _add_purchase(_player, "BuyIn", reference="bulk-admin", purchases=_p)
-                _p, _s, _msgs = _ppp(_p, _s)
-                _save_purchases(_p)
-                _save_statuses(_s)
-                _refresh()
-                st.success(f"BuyIn added for: {', '.join(_needs_buyin)}. All marked PAID.")
                 st.rerun()
             except Exception as exc:
                 st.error(f"Error: {exc}")
@@ -370,29 +313,56 @@ with tabs[1]:
         show = show.sort_values("Timestamp", ascending=False)
         st.dataframe(show, use_container_width=True, hide_index=True)
 
+    st.divider()
+    st.subheader("Delete Purchase")
+    _p_del = load_purchases()
+    if _p_del.empty:
+        st.caption("No purchases to delete.")
+    else:
+        _del_p_opts = [
+            f"{i}: {row['Player']} — {row['PurchaseType']} ({str(row.get('Timestamp', ''))[:16]})"
+            for i, (_, row) in enumerate(_p_del.iterrows())
+        ]
+        _del_p_sel   = st.selectbox("Select purchase to delete", _del_p_opts, key="del_purch_sel")
+        _del_p_idx   = _del_p_opts.index(_del_p_sel)
+        _del_p_row   = _p_del.iloc[_del_p_idx]
+        _del_p_ok    = st.checkbox("Confirm deletion", key="del_purch_confirm")
+        if st.button("Delete Purchase", type="primary", disabled=not _del_p_ok):
+            try:
+                from src.competition import load_player_status, mark_unpaid
+                _p_new = _p_del.drop(_p_del.index[_del_p_idx]).reset_index(drop=True)
+                _s_del = load_player_status()
+                if _del_p_row["PurchaseType"] == "BuyIn":
+                    _s_del = mark_unpaid(str(_del_p_row["Player"]), _s_del)
+                    _save_statuses(_s_del)
+                _save_purchases(_p_new)
+                _refresh()
+                st.success(f"Deleted: {_del_p_row['Player']} — {_del_p_row['PurchaseType']}")
+                st.rerun()
+            except Exception as _del_exc:
+                st.error(f"Error: {_del_exc}")
+
     # ── Team Swaps ────────────────────────────────────────────────────────────
     st.divider()
     st.subheader("Team Swaps")
     st.caption(
-        "Execute a full roster swap between two players — all teams are exchanged. "
+        "Execute a full roster swap between two players — all 8 teams are exchanged. "
         "The initiator (the player who chose the swap) pays €5. "
-        "Points already earned are not transferred — only future points from the swapped teams count. "
-        "Each set of teams can only be swapped once — first come, first served."
+        "Each set of 8 teams can only be swapped once — first come, first served. Send Oisin a message to lock in."
     )
 
     from src.competition import (
         load_swaps as _load_swaps, get_swapped_players as _get_swapped_players,
-        execute_team_swap as _execute_team_swap,
-        load_swap_offsets as _load_swap_offsets,
-        SWAPS_PATH as _SWAPS_PATH, SWAP_OFFSETS_PATH as _SWAP_OFFSETS_PATH,
+        execute_team_swap as _execute_team_swap, SWAPS_PATH as _SWAPS_PATH,
+        load_swap_offsets as _load_swap_offsets, SWAP_OFFSETS_PATH as _SWAP_OFFSETS_PATH,
     )
     from src.event_engine import load_allocation as _la_swap
 
-    _sw_alloc       = _la_swap()
+    _sw_alloc      = _la_swap()
     _sw_all_players = sorted(_sw_alloc.assignments.keys())
-    _sw_df          = _load_swaps()
-    _sw_already     = _get_swapped_players(_sw_df)
-    _sw_eligible    = [p for p in _sw_all_players if p not in _sw_already]
+    _sw_df         = _load_swaps()
+    _sw_already    = _get_swapped_players(_sw_df)
+    _sw_eligible   = [p for p in _sw_all_players if p not in _sw_already]
 
     _sw_init = st.selectbox("Initiator (pays €5)", ["—"] + _sw_eligible, key="sw_init")
     _sw_ctrp = st.selectbox(
@@ -424,11 +394,10 @@ with tabs[1]:
                 from dashboard.data import get_match_stats as _gms_sw, get_tier_map as _gtm_sw
                 _sw_audit      = _lal_sw()
                 _sw_offsets    = _load_swap_offsets()
-                _sw_purch, _sw_new, _sw_offsets_new, _sw_audit_new, _sw_errs = _execute_team_swap(
+                _sw_new, _sw_offsets_new, _sw_audit_new, _sw_errs = _execute_team_swap(
                     initiator=_sw_init,
                     counterpart=_sw_ctrp,
                     allocation_path=DATA / "allocation.csv",
-                    purchases_path=DATA / "purchases.csv",
                     swaps=_sw_df, audit_log=_sw_audit,
                     swap_offsets=_sw_offsets,
                     match_stats=_gms_sw(),
@@ -439,10 +408,15 @@ with tabs[1]:
                         st.error(_e)
                 else:
                     _sw_new.to_csv(_SWAPS_PATH, index=False)
+                    _push(_SWAPS_PATH, "data/swaps.csv",
+                          f"TeamSwap: {_sw_init} ↔ {_sw_ctrp}")
                     _sw_offsets_new.to_csv(_SWAP_OFFSETS_PATH, index=False)
+                    _push(_SWAP_OFFSETS_PATH, "data/swap_offsets.csv",
+                          f"SwapOffsets: {_sw_init} ↔ {_sw_ctrp}")
                     _sw_audit_new.to_csv(DATA / "audit_log.csv", index=False)
-                    _sync("swaps.csv", "swap_offsets.csv", "audit_log.csv",
-                          "allocation.csv", "purchases.csv")
+                    _push(DATA / "audit_log.csv", "data/audit_log.csv", "Audit: team swap")
+                    _push(DATA / "allocation.csv", "data/allocation.csv",
+                          f"Allocation: {_sw_init} ↔ {_sw_ctrp}")
                     _refresh()
                     st.success(f"✓ Full roster swap complete: {_sw_init} ↔ {_sw_ctrp}")
                     st.rerun()
@@ -480,7 +454,7 @@ with tabs[2]:
         _pick_cols = [
             "PreTournamentCaptain", "KnockoutCaptain",
             "WorldCupWinner", "RunnerUp", "BronzeMedal",
-            "GoldenBoot", "DarkHorse", "FirstKnockedOut",
+            "GoldenBoot", "DarkHorse",
         ]
         for col in _pick_cols:
             if col not in _picks_df.columns:
@@ -516,7 +490,7 @@ with tabs[2]:
                 st.markdown("**Pre-Tournament Captain**")
                 cur_ptc = _v("PreTournamentCaptain")
                 ptc_idx = _cap_opts.index(cur_ptc) if cur_ptc in _cap_opts else 0
-                new_ptc = st.selectbox("Must be one of their original 12 teams",
+                new_ptc = st.selectbox("Must be one of their original 8 teams",
                                        _cap_opts, index=ptc_idx, key="ptc",
                                        label_visibility="collapsed")
             with pc2:
@@ -548,7 +522,7 @@ with tabs[2]:
                 new_bm = st.selectbox("Any team", [""] + _all_teams, index=bm_idx,
                                       key="bm", label_visibility="collapsed")
 
-            pd4, pd5, pd6 = st.columns(3)
+            pd4, pd5 = st.columns(2)
             with pd4:
                 st.markdown("**Golden Boot**")
                 new_gb = st.text_input("Player name (free text)",
@@ -563,13 +537,6 @@ with tabs[2]:
                 new_dh = st.selectbox("Tier 3 or 4, not already owned",
                                       [""] + _low_tier, index=dh_idx,
                                       key="dh", label_visibility="collapsed")
-            with pd6:
-                st.markdown("**First Knocked Out**")
-                st.caption("Any team — first eliminated from the tournament")
-                cur_fko = _v("FirstKnockedOut")
-                fko_idx = ([""] + _all_teams).index(cur_fko) if cur_fko in ([""] + _all_teams) else 0
-                new_fko = st.selectbox("Any team", [""] + _all_teams, index=fko_idx,
-                                       key="fko", label_visibility="collapsed")
 
             if st.form_submit_button("Save picks", type="primary"):
                 # Validate same-captain rule
@@ -583,9 +550,8 @@ with tabs[2]:
                     _picks_df.loc[_row_mask, "BronzeMedal"]          = new_bm
                     _picks_df.loc[_row_mask, "GoldenBoot"]           = new_gb
                     _picks_df.loc[_row_mask, "DarkHorse"]            = new_dh
-                    _picks_df.loc[_row_mask, "FirstKnockedOut"]      = new_fko
                     _picks_df.to_csv(_players_path, index=False)
-                    _sync("players.csv")
+                    _push(_players_path, "data/players.csv", f"Picks saved for {_player_sel}")
                     st.success(f"Picks saved for {_player_sel}.")
                     _refresh()
 
@@ -633,10 +599,11 @@ with tabs[3]:
                     ev, log = lock_predictions(load_events(), load_audit_log())
                     ev.to_csv(DATA / "events.csv", index=False)
                     log.to_csv(DATA / "audit_log.csv", index=False)
+                    _push(DATA / "events.csv", "data/events.csv", "Lock predictions")
+                    _push(DATA / "audit_log.csv", "data/audit_log.csv", "Audit: predictions locked")
                     dl = get_deadlines()
                     dl["prediction_lock"] = now_iso
                     save_deadlines(dl)
-                    _sync("events.csv", "audit_log.csv", "deadlines.json")
                     preds = load_predictions()
                     n = len(preds) if not preds.empty else 0
                     st.success(f"Predictions locked. {n} player prediction(s) now public.")
@@ -658,10 +625,11 @@ with tabs[3]:
                     s, ev, log = lock_buyins(load_player_status(), load_events(), load_audit_log())
                     ev.to_csv(DATA / "events.csv", index=False)
                     log.to_csv(DATA / "audit_log.csv", index=False)
+                    _push(DATA / "events.csv", "data/events.csv", "Lock buy-ins")
+                    _push(DATA / "audit_log.csv", "data/audit_log.csv", "Audit: buy-ins locked")
                     dl = get_deadlines()
                     dl["buy_in_deadline"] = now_iso
                     save_deadlines(dl)
-                    _sync("events.csv", "audit_log.csv", "deadlines.json", "players.csv")
                     paid = s[s["Status"] == "PAID"] if not s.empty else pd.DataFrame()
                     unpaid = s[s["Status"] != "PAID"] if not s.empty else pd.DataFrame()
                     st.success(f"Buy-ins locked. {len(paid)} paid / {len(unpaid)} unpaid.")
@@ -696,6 +664,7 @@ with tabs[4]:
         _gs_teams_df = get_teams()
         _gs_all_teams = sorted(_gs_teams_df["Team"].tolist()) if not _gs_teams_df.empty else []
 
+        # Determine current status for each team
         _gs_round_map: dict[str, str] = {}
         if not _gs_ms.empty and "RoundReached" in _gs_ms.columns:
             for _, _r in _gs_ms.iterrows():
@@ -727,6 +696,7 @@ with tabs[4]:
                         if _mask.any():
                             _gs_ms2.loc[_mask, "RoundReached"] = "GroupStage"
                         else:
+                            # Team row doesn't exist yet — add it
                             _new_row = {"Team": _t, "RoundReached": "GroupStage"}
                             _gs_ms2 = pd.concat([_gs_ms2, pd.DataFrame([_new_row])], ignore_index=True)
                     _gs_ms2.to_csv(DATA / "match_stats.csv", index=False)
@@ -779,6 +749,34 @@ with tabs[4]:
 
         fixtures_df = get_fixtures()
         results_df  = get_match_results()
+
+        # Build winner_of dict so KO placeholder names resolve to real teams
+        _winner_of: dict[int, str] = {}
+        if not results_df.empty and not fixtures_df.empty:
+            for _, _rr in results_df.iterrows():
+                _rmn = int(pd.to_numeric(_rr.get("match_number", 0), errors="coerce") or 0)
+                if _rmn < 73:
+                    continue
+                _rf = fixtures_df[fixtures_df["match_number"] == _rmn]
+                if _rf.empty:
+                    continue
+                _rh = str(_rf.iloc[0]["home_team"]); _ra = str(_rf.iloc[0]["away_team"])
+                _rhg = int(float(_rr.get("home_goals", 0) or 0))
+                _rag = int(float(_rr.get("away_goals", 0) or 0))
+                _rpw = str(_rr.get("penalty_winner", "") or "").strip()
+                if _rpw == "home" or (not _rpw and _rhg > _rag):
+                    _winner_of[_rmn] = _rh
+                elif _rpw == "away" or (not _rpw and _rag > _rhg):
+                    _winner_of[_rmn] = _ra
+
+        def _resolve_team(raw: str) -> str:
+            s = str(raw or "").strip()
+            if s.startswith("Winner match "):
+                mn_ = int(s.split()[-1])
+                return _winner_of.get(mn_, s)
+            if s.startswith("Runner-up match "):
+                return s  # keep as-is (rare)
+            return s
 
         if fixtures_df.empty:
             st.warning("No fixture data found. Ensure data/fixtures.csv exists.")
@@ -844,10 +842,10 @@ with tabs[4]:
                         if et:
                             score_str += " (AET)"
                         if pwin:
-                            pw_label = m["home_team"] if pwin == "home" else m["away_team"]
+                            pw_label = _resolve_team(m["home_team"]) if pwin == "home" else _resolve_team(m["away_team"])
                             score_str += f" · {pw_label} win on pens"
 
-                    label = f"{dot} M{mn}: {m['home_team']} v {m['away_team']}"
+                    label = f"{dot} M{mn}: {_resolve_team(m['home_team'])} v {_resolve_team(m['away_team'])}"
                     match_options.append((label + score_str, mn, m))
 
                 sel_label = st.selectbox(
@@ -858,8 +856,8 @@ with tabs[4]:
                 sel_mn   = match_options[sel_idx][1]
                 sel_fix  = match_options[sel_idx][2]
 
-                home_team = sel_fix["home_team"]
-                away_team = sel_fix["away_team"]
+                home_team = _resolve_team(sel_fix["home_team"])
+                away_team = _resolve_team(sel_fix["away_team"])
                 is_group  = bool(str(sel_fix.get("group", "")).strip())
 
                 # Pre-fill if already entered
@@ -918,30 +916,28 @@ with tabs[4]:
                     se1, se2 = st.columns(2)
                     with se1:
                         st.caption(f"{home_team}")
-                        h_ht = st.number_input("Hat Tricks 🎩",  0, 5,  _pi("home_hat_tricks"),      key="h_ht", help="+10 pts each")
-                        h_rc = st.number_input("Red Cards 🟥",   0, 10, _pi("home_red_cards"),       key="h_rc", help="-5 pts each")
-                        h_so = st.number_input("Shirt Off 👕",   0, 5,  _pi("home_shirt_off"),       key="h_so", help="+25 pts each")
-                        h_gk = st.number_input("GK Goal 🧤",     0, 3,  _pi("home_gk_goals"),        key="h_gk", help="+75 pts each")
-                        h_fe = st.checkbox("First Eliminated ☠️", bool(_pi("home_first_eliminated")), key="h_fe", help="+35 pts to owners")
+                        h_ht   = st.number_input("Hat Tricks 🎩",     0, 5,  _pi("home_hat_tricks"),      key="h_ht",  help="+10 pts each")
+                        h_rc   = st.number_input("Red Cards 🟥",      0, 10, _pi("home_red_cards"),       key="h_rc",  help="−5 pts each")
+                        h_so   = st.number_input("Shirt Off 👕",      0, 5,  _pi("home_shirt_off"),       key="h_so",  help="+25 pts each")
+                        h_gk   = st.number_input("GK Goal 🧤",        0, 3,  _pi("home_gk_goals"),        key="h_gk",  help="+75 pts each")
                     with se2:
                         st.caption(f"{away_team}")
-                        a_ht = st.number_input("Hat Tricks 🎩",  0, 5,  _pi("away_hat_tricks"),      key="a_ht", help="+10 pts each")
-                        a_rc = st.number_input("Red Cards 🟥",   0, 10, _pi("away_red_cards"),       key="a_rc", help="-5 pts each")
-                        a_so = st.number_input("Shirt Off 👕",   0, 5,  _pi("away_shirt_off"),       key="a_so", help="+25 pts each")
-                        a_gk = st.number_input("GK Goal 🧤",     0, 3,  _pi("away_gk_goals"),        key="a_gk", help="+75 pts each")
-                        a_fe = st.checkbox("First Eliminated ☠️", bool(_pi("away_first_eliminated")), key="a_fe", help="+35 pts to owners")
+                        a_ht   = st.number_input("Hat Tricks 🎩",     0, 5,  _pi("away_hat_tricks"),      key="a_ht",  help="+10 pts each")
+                        a_rc   = st.number_input("Red Cards 🟥",      0, 10, _pi("away_red_cards"),       key="a_rc",  help="−5 pts each")
+                        a_so   = st.number_input("Shirt Off 👕",      0, 5,  _pi("away_shirt_off"),       key="a_so",  help="+25 pts each")
+                        a_gk   = st.number_input("GK Goal 🧤",        0, 3,  _pi("away_gk_goals"),        key="a_gk",  help="+75 pts each")
 
                     submitted_m = st.form_submit_button("Save Result", type="primary")
                     if submitted_m:
                         try:
                             save_match_result_and_recalculate(
-                                match_number          = sel_mn,
-                                home_goals            = h_goals,
-                                away_goals            = a_goals,
-                                extra_time            = et_played and not is_group,
-                                penalty_winner        = pen_winner,
-                                comeback_home         = cb_home,
-                                comeback_away         = cb_away,
+                                match_number  = sel_mn,
+                                home_goals    = h_goals,
+                                away_goals    = a_goals,
+                                extra_time    = et_played and not is_group,
+                                penalty_winner= pen_winner,
+                                comeback_home = cb_home,
+                                comeback_away = cb_away,
                                 home_hat_tricks       = h_ht,
                                 away_hat_tricks       = a_ht,
                                 home_red_cards        = h_rc,
@@ -950,10 +946,7 @@ with tabs[4]:
                                 away_shirt_off        = a_so,
                                 home_gk_goals         = h_gk,
                                 away_gk_goals         = a_gk,
-                                home_first_eliminated = h_fe,
-                                away_first_eliminated = a_fe,
                             )
-                            _sync("match_results.csv", "match_stats.csv")
                             st.success(
                                 f"Saved: {home_team} {h_goals}–{a_goals} {away_team}. "
                                 "Stats recalculated."
@@ -1010,19 +1003,19 @@ with tabs[4]:
 
             st.markdown("**Group Stage**")
             ca1, ca2, ca3, ca4, ca5 = st.columns(5)
-            with ca1: g_goals  = st.number_input("Goals",      0, 50, _ev("GroupGoals"))
-            with ca2: g_cs     = st.number_input("Cl. Sheets", 0, 10, _ev("GroupCleanSheets"))
-            with ca3: g_pw     = st.number_input("Pen. Wins",  0,  5, _ev("GroupPenaltyWins"))
-            with ca4: g_cw     = st.number_input("CB Wins",    0,  5, _ev("GroupComebackWins"))
+            with ca1: g_goals  = st.number_input("Goals",      0, 50, _ev("GroupGoals"),       key="adv_g_goals")
+            with ca2: g_cs     = st.number_input("Cl. Sheets", 0, 10, _ev("GroupCleanSheets"), key="adv_g_cs")
+            with ca3: g_pw     = st.number_input("Pen. Wins",  0,  5, _ev("GroupPenaltyWins"), key="adv_g_pw")
+            with ca4: g_cw     = st.number_input("CB Wins",    0,  5, _ev("GroupComebackWins"),key="adv_g_cw")
             with ca5: g_winner = st.checkbox("Group Winner", value=bool(_ev("GroupWinner")))
 
             st.markdown("**Knockout**")
             cb1, cb2, cb3, cb4 = st.columns(4)
-            with cb1: ko_goals = st.number_input("Goals",      0, 50, _ev("KnockoutGoals"))
-            with cb2: ko_cs    = st.number_input("Cl. Sheets", 0, 10, _ev("KnockoutCleanSheets"))
-            with cb3: ko_pw    = st.number_input("Pen. Wins",  0,  5, _ev("KnockoutPenaltyWins"))
-            with cb4: ko_cw    = st.number_input("CB Wins",    0,  5, _ev("KnockoutComebackWins"))
-            rounds  = ["", "GroupStage", "R16", "QF", "SF", "Final", "Winner"]
+            with cb1: ko_goals = st.number_input("Goals",      0, 50, _ev("KnockoutGoals"),       key="adv_ko_goals")
+            with cb2: ko_cs    = st.number_input("Cl. Sheets", 0, 10, _ev("KnockoutCleanSheets"), key="adv_ko_cs")
+            with cb3: ko_pw    = st.number_input("Pen. Wins",  0,  5, _ev("KnockoutPenaltyWins"), key="adv_ko_pw")
+            with cb4: ko_cw    = st.number_input("CB Wins",    0,  5, _ev("KnockoutComebackWins"),key="adv_ko_cw")
+            rounds  = ["", "GroupStage", "R32", "R16", "QF", "SF", "Final", "Winner"]
             cur_rnd = _es("RoundReached")
             rnd     = st.selectbox("Round Reached", rounds,
                                    index=rounds.index(cur_rnd) if cur_rnd in rounds else 0)
@@ -1039,7 +1032,7 @@ with tabs[4]:
                         "RoundReached": rnd,
                     }, ms)
                     ms.to_csv(DATA / "match_stats.csv", index=False)
-                    _sync("match_stats.csv")
+                    _push(DATA / "match_stats.csv", "data/match_stats.csv", f"Results: {res_team}")
                     st.success(f"Saved {res_team}.")
                     _refresh()
                 except Exception as exc:
@@ -1123,7 +1116,7 @@ with tabs[5]:
                             _se_ms2[_col] = 0
                         _se_ms2.loc[_mask, _col] = _val
                     _se_ms2.to_csv(DATA / "match_stats.csv", index=False)
-                    _sync("match_stats.csv")
+                    _push(DATA / "match_stats.csv", "data/match_stats.csv", f"Special events: {_se_team}")
                     st.success(f"Special events saved for {_se_team}.")
                     _refresh()
             except Exception as exc:
@@ -1153,8 +1146,7 @@ with tabs[6]:
     st.subheader("Tournament Results")
     st.caption(
         "Set the final outcomes used for prediction bonus calculations. "
-        "Leave fields blank until the result is known. "
-        "First Knocked Out is auto-derived from the Special Events tab."
+        "Leave fields blank until the result is known."
     )
 
     _tr_path = DATA / "tournament_results.json"
@@ -1196,7 +1188,6 @@ with tabs[6]:
                 "golden_boot_winner": _tr_gb,
             }
             _tr_path.write_text(_json.dumps(_tr_new, indent=2), encoding="utf-8")
-            _sync("tournament_results.json")
             st.success("Tournament results saved.")
             _refresh()
             st.rerun()
@@ -1336,7 +1327,6 @@ with tabs[9]:
 
         if st.form_submit_button("Save All Deadlines", type="primary"):
             save_deadlines(updated)
-            _sync("deadlines.json")
             _refresh()
             st.success("Deadlines saved.")
             st.rerun()
@@ -1406,79 +1396,117 @@ with tabs[10]:
 # Tab 11: Budgets
 # ─────────────────────────────────────────────
 with tabs[11]:
-    st.subheader("💰 Player Budgets")
+    st.subheader("Player Budgets")
     st.caption(
-        "Budget = total each player has put into the Revolut pocket. "
-        "This drives the prize pool and each player's available spending in the shop. "
-        "Update here when someone sends money, then publish."
+        "Budget = money each player has contributed to the Revolut pocket. "
+        "The prize pool equals the sum of all budgets. "
+        "Available balance = Budget minus recorded purchases."
     )
 
-    _players_path = DATA / "players.csv"
-    _pdf = pd.read_csv(_players_path, dtype=str).fillna("") if _players_path.exists() else pd.DataFrame()
+    from src.competition import load_player_status as _lps_b
+    from dashboard.data import get_prize_pool as _gpp_b
+    _budg_st = _lps_b()
 
-    if _pdf.empty:
-        st.warning("players.csv not found.")
+    if _budg_st.empty:
+        st.warning("No player data found.")
     else:
-        if "Budget" not in _pdf.columns:
-            _pdf["Budget"] = "0"
-
-        # Summary strip
-        _budgets = pd.to_numeric(_pdf["Budget"], errors="coerce").fillna(0)
-        _prize_pool = int(_budgets.sum())
-        _bc1, _bc2, _bc3 = st.columns(3)
-        _bc1.metric("Prize Pool (Revolut total)", f"€{_prize_pool}")
-        _bc2.metric("Players", len(_pdf))
-        _bc3.metric("Avg Budget", f"€{_budgets.mean():.0f}" if len(_pdf) else "€0")
-
-        st.divider()
-
-        # Per-player budget editors
-        _updated = False
-        for _i, _row in _pdf.iterrows():
-            _player = _row["Player"]
-            _cur = int(float(_row.get("Budget", 0) or 0))
-            _spent_types = set()
-            _pur_path = DATA / "purchases.csv"
-            if _pur_path.exists():
-                _pur = pd.read_csv(_pur_path, dtype=str).fillna("")
-                _spent_types = set(_pur.loc[_pur["Player"] == _player, "PurchaseType"].tolist())
-            _addon_costs = {"PredictionPack": 5, "Mulligan": 3, "NinthTeam": 3, "Resurrection": 3, "Insurance": 2}
-            _spent = sum(_addon_costs.get(pt, 0) for pt in _spent_types if pt in _addon_costs)
-            _remaining = _cur - _spent
-
-            _col_name, _col_cur, _col_new, _col_remaining = st.columns([3, 1, 2, 1])
-            with _col_name:
-                st.markdown(
-                    f'<div style="padding:0.45rem 0;font-weight:600;color:#F5F5F5">{_player}</div>',
-                    unsafe_allow_html=True,
-                )
-            with _col_cur:
-                st.markdown(
-                    f'<div style="padding:0.45rem 0;color:#D4A017;font-weight:700">€{_cur}</div>',
-                    unsafe_allow_html=True,
-                )
-            with _col_new:
-                _new_val = st.number_input(
-                    f"Budget for {_player}", min_value=0, max_value=500,
-                    value=_cur, step=1, label_visibility="collapsed",
-                    key=f"budget_{_player}",
-                )
-            with _col_remaining:
-                _rem_color = "#6EE7B7" if _remaining >= 0 else "#EF4444"
-                st.markdown(
-                    f'<div style="padding:0.45rem 0;color:{_rem_color};font-size:0.85rem">'
-                    f'€{_remaining} left</div>',
-                    unsafe_allow_html=True,
-                )
-
-            if int(_new_val) != _cur:
-                _pdf.at[_i, "Budget"] = str(int(_new_val))
-                _updated = True
+        _pool_b = _gpp_b()
+        _bc1, _bc2, _bc3, _bc4 = st.columns(4)
+        with _bc1:
+            st.metric("Prize Pool", f"€{_pool_b['current_pot']:.2f}",
+                      help="Sum of all Budget values in players.csv")
+        with _bc2:
+            st.metric("🥇 1st (50%)", f"€{_pool_b['first_prize']:.2f}")
+        with _bc3:
+            st.metric("🥈 2nd (30%)", f"€{_pool_b['second_prize']:.2f}")
+        with _bc4:
+            st.metric("🥉 3rd (20%)", f"€{_pool_b['third_prize']:.2f}")
 
         st.divider()
-        if st.button("💾 Save Budgets & Publish", type="primary"):
-            _pdf.to_csv(_players_path, index=False)
-            _refresh()
-            push_file(_players_path, "data/players.csv", "Admin: update player budgets")
-            st.success("Budgets saved and published to GitHub.")
-            st.rerun()
+
+        with st.form("budgets_form"):
+            st.markdown("**Set each player's budget** (€ contributed to the Revolut pocket)")
+            _new_budgets: dict[str, float] = {}
+            _b_cols = st.columns(2)
+            for _bi, (_b_idx, _b_row) in enumerate(_budg_st.iterrows()):
+                _b_player = str(_b_row["Player"])
+                _b_cur = float(pd.to_numeric(_b_row.get("Budget", 0.0), errors="coerce") or 0.0)
+                with _b_cols[_bi % 2]:
+                    _new_budgets[_b_player] = st.number_input(
+                        _b_player,
+                        min_value=0.0,
+                        max_value=500.0,
+                        value=_b_cur,
+                        step=0.5,
+                        format="%.2f",
+                        key=f"budget_{_b_player}",
+                    )
+
+            if st.form_submit_button("💾 Save Budgets", type="primary"):
+                from src.competition import (
+                    load_purchases as _lp_b, add_purchase as _ap_b,
+                    mark_paid as _mp_b,
+                )
+                from src.event_engine import process_pending_purchases as _ppp_b
+                _budg_st2 = _lps_b().copy()
+                _budg_st2["Budget"] = _budg_st2["Player"].map(_new_budgets).fillna(0.0)
+
+                # Auto-add BuyIn for any player whose budget is >= €5 (cost of Buy In).
+                # Remove BuyIn and mark UNPAID for any player whose budget drops below €5.
+                _purch_b = _lp_b()
+                _has_buyin = set(_purch_b[_purch_b["PurchaseType"] == "BuyIn"]["Player"].tolist()) if not _purch_b.empty else set()
+                from src.competition import mark_unpaid as _mu_b
+                for _bp, _bv in _new_budgets.items():
+                    if _bv >= 5.0 and _bp not in _has_buyin:
+                        _purch_b = _ap_b(_bp, "BuyIn", "auto (budget set)", _purch_b)
+                    elif _bv < 5.0 and _bp in _has_buyin:
+                        # Budget dropped below Buy In cost — remove auto BuyIn and mark UNPAID
+                        _purch_b = _purch_b[
+                            ~((_purch_b["Player"] == _bp) &
+                              (_purch_b["PurchaseType"] == "BuyIn") &
+                              (_purch_b["Reference"].str.contains("auto", case=False, na=False)))
+                        ].reset_index(drop=True)
+                        _budg_st2 = _mu_b(_bp, _budg_st2)
+                _up_b, _us_b, _ = _ppp_b(_purch_b, _budg_st2)
+                # Preserve the budget values (process_pending_purchases may not know about Budget)
+                _us_b["Budget"] = _us_b["Player"].map(_new_budgets).fillna(0.0)
+                _save_purchases(_up_b)
+                _save_statuses(_us_b)
+                _refresh()
+                _new_pool = sum(_new_budgets.values())
+                st.success(f"Budgets saved. New prize pool: **€{_new_pool:.2f}**")
+                st.rerun()
+
+        st.divider()
+        st.markdown("**Spend vs budget breakdown**")
+        st.caption("Spend is computed from purchase records × unit price. Available = Budget − Spent.")
+
+        try:
+            from dashboard.data import get_player_budgets as _gpb
+            _bdf = _gpb()
+            if _bdf.empty:
+                st.info("No data yet.")
+            else:
+                def _bdf_style(row):
+                    styles = []
+                    for col in row.index:
+                        if col == "Budget":
+                            styles.append("color:#D4A017;font-weight:700")
+                        elif col == "Available":
+                            try:
+                                v = float(str(row[col]).replace("€", "") or 0)
+                            except (ValueError, TypeError):
+                                v = 0.0
+                            styles.append("color:#EF4444;font-weight:700" if v < 0 else (
+                                "color:#6EE7B7;font-weight:600" if v > 0 else "color:#9CA3AF"))
+                        else:
+                            styles.append("")
+                    return styles
+
+                _bdf_disp = _bdf.copy()
+                for _c in ["Budget", "Spent", "Available"]:
+                    _bdf_disp[_c] = _bdf_disp[_c].apply(lambda v: f"€{float(v):.2f}")
+                st.dataframe(_bdf_disp.style.apply(_bdf_style, axis=1),
+                             use_container_width=True, hide_index=True)
+        except Exception as _be:
+            st.warning(f"Could not load budget detail: {_be}")
