@@ -60,12 +60,23 @@ def _save_statuses(df: pd.DataFrame, msg: str = "Update players.csv"):
 
 
 # ── Tabs ──────────────────────────────────────────────────────────────────
-tabs = st.tabs([
+_TAB_NAMES = [
     "Draw Events", "Purchases", "Picks",
     "Locking", "Results Entry", "Special Events",
     "Tournament Results",
     "WhatsApp", "Draw Broadcast", "Deadlines", "Snapshots", "Budgets",
-])
+]
+# Without on_change="rerun"/key, st.tabs() only remembers its selection in the
+# frontend widget itself — a mobile browser backgrounding the tab (or a flaky
+# connection reconnecting) remounts that widget from scratch and snaps back to
+# the first tab. Track the active tab in session state + the URL so admin
+# actions (e.g. saving a Results Entry) don't bounce back to Draw Events.
+_default_tab = st.session_state.get("admin_active_tab", st.query_params.get("admin_tab", _TAB_NAMES[0]))
+if _default_tab not in _TAB_NAMES:
+    _default_tab = _TAB_NAMES[0]
+
+tabs = st.tabs(_TAB_NAMES, default=_default_tab, key="admin_active_tab", on_change="rerun")
+st.query_params["admin_tab"] = st.session_state["admin_active_tab"]
 
 # ─────────────────────────────────────────────
 # Tab 0: Draw Events

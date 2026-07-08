@@ -1,8 +1,8 @@
-Player,Status,PaidTimestamp,PreTournamentCaptain,KnockoutCaptain,WorldCupWinner,RunnerUp,BronzeMedal,GoldenBoot,DarkHorse,FirstKnockedOut,Budget
-Darach,PAID,,Haiti,Argentina,,,,,,,5
-Conor Carson,UNPAID,,Brazil,Colombia,,,,,,,
-Conor Cremin,PAID,,Ghana,Portugal,,,,,,,10
-MoronJ,PAID,,France,Spain,Spain,Argentina,Portugal,Mbappé,New Zealand,Curacao,15
-Declan,PAID,,France,Brazil,France,Spain,Netherlands,Mbappé,Scotland,Curacao,13
-Moyo,UNPAID,,Norway,Colombia,,,,,,,
-Oisin,PAID,,Argentina,Netherlands,Argentina,Spain,Germany,Mbappe,Norway,South Africa,13
+Player,Status,PaidTimestamp,PreTournamentCaptain,KnockoutCaptain,WorldCupWinner,RunnerUp,BronzeMedal,GoldenBoot,DarkHorse,FirstKnockedOut,Budget,BuyIn,PredictionPack,Mulligan,CompleteRedraw,NinthTeam,Resurrection,Insurance,NinthTeamSelection,ResurrectionSelection
+Darach,PAID,,Haiti,Argentina,,,,,,,5,1,0,0,0,0,0,0,,
+Conor Carson,UNPAID,,Brazil,Colombia,,,,,,,0,1,0,0,0,0,0,0,,
+Conor Cremin,PAID,,Ghana,Portugal,,,,,,,10,1,0,0,0,0,0,0,,
+MoronJ,PAID,,France,Spain,Spain,Argentina,Portugal,Mbappé,New Zealand,Curacao,15,1,1,0,0,1,0,0,Senegal,
+Declan,PAID,,France,Brazil,France,Spain,Netherlands,Mbappé,Scotland,Curacao,13,1,1,0,0,1,0,0,Cote d Ivoire,
+Moyo,UNPAID,,Norway,Colombia,,,,,,,0,1,0,1,0,1,0,0,Mexico,
+Oisin,PAID,,Argentina,Netherlands,Argentina,Spain,Germany,Mbappe,Norway,South Africa,13,1,1,0,0,1,0,0,Brazil,
