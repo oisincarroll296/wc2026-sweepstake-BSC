@@ -466,9 +466,59 @@ with tab_results:
                 f'font-weight:700;border-radius:3px;padding:1px 4px;margin-right:3px">T{tier}</span>'
             )
 
+        _EVENT_TYPES = [
+            "Upset Win", "Comeback Win", "Penalty Shootout",
+            "Hat Trick", "Red Card", "Shirt Removal", "GK Goal",
+        ]
+
+        def _row_event_types(m: "pd.Series") -> set[str]:
+            events: set[str] = set()
+            home = str(m.get("home_team", ""))
+            away = str(m.get("away_team", ""))
+            hg   = int(float(m.get("home_goals", 0) or 0))
+            ag   = int(float(m.get("away_goals", 0) or 0))
+            pw   = str(m.get("penalty_winner", "") or "").strip()
+            if pw:
+                events.add("Penalty Shootout")
+            if int(float(m.get("comeback_home", 0) or 0)) or int(float(m.get("comeback_away", 0) or 0)):
+                events.add("Comeback Win")
+            if int(float(m.get("home_hat_tricks", 0) or 0)) or int(float(m.get("away_hat_tricks", 0) or 0)):
+                events.add("Hat Trick")
+            if int(float(m.get("home_red_cards", 0) or 0)) or int(float(m.get("away_red_cards", 0) or 0)):
+                events.add("Red Card")
+            if int(float(m.get("home_shirt_off", 0) or 0)) or int(float(m.get("away_shirt_off", 0) or 0)):
+                events.add("Shirt Removal")
+            if int(float(m.get("home_gk_goals", 0) or 0)) or int(float(m.get("away_gk_goals", 0) or 0)):
+                events.add("GK Goal")
+            if pw == "home" or (not pw and hg > ag):
+                winner, loser = home, away
+            elif pw == "away" or (not pw and ag > hg):
+                winner, loser = away, home
+            else:
+                winner, loser = None, None
+            if winner and loser and tier_map_r.get(winner, 0) > tier_map_r.get(loser, 0):
+                events.add("Upset Win")
+            return events
+
+        _all_teams_r = sorted(set(res_sorted["home_team"]) | set(res_sorted["away_team"]))
+        _fc1, _fc2 = st.columns(2)
+        with _fc1:
+            _team_filter = st.multiselect("Filter by country", _all_teams_r, key="results_team_filter")
+        with _fc2:
+            _event_filter = st.multiselect("Filter by event type", _EVENT_TYPES, key="results_event_filter")
+
+        if _team_filter:
+            res_sorted = res_sorted[
+                res_sorted["home_team"].isin(_team_filter) | res_sorted["away_team"].isin(_team_filter)
+            ]
+        if _event_filter:
+            _wanted = set(_event_filter)
+            res_sorted = res_sorted[res_sorted.apply(lambda r: bool(_row_event_types(r) & _wanted), axis=1)]
+
         st.markdown(
             f'<div style="color:#9CA3AF;font-size:0.8rem;margin-bottom:0.6rem">'
-            f'{len(res_sorted)} result{"s" if len(res_sorted) != 1 else ""} entered'
+            f'{len(res_sorted)} result{"s" if len(res_sorted) != 1 else ""}'
+            f'{" matching filters" if (_team_filter or _event_filter) else " entered"}'
             f'</div>',
             unsafe_allow_html=True,
         )
@@ -548,7 +598,9 @@ with tab_results:
                 unsafe_allow_html=True,
             )
 
-        if len(dates_ordered):
+        if res_sorted.empty:
+            st.info("No results match the selected filters.")
+        elif len(dates_ordered):
             for match_date in dates_ordered:
                 day_matches = res_sorted[res_sorted["match_date"] == match_date]
                 _ts = pd.Timestamp(match_date)
