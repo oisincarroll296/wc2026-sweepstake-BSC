@@ -332,8 +332,83 @@ def get_fixtures() -> pd.DataFrame:
 
 
 @st.cache_data(ttl=10)
+def _build_ko_res_by_mn(res: pd.DataFrame) -> dict:
+    """Return {match_number: result_row} for KO matches (mn >= 73, skip 103)."""
+    out: dict[int, object] = {}
+    if res.empty or "match_number" not in res.columns:
+        return out
+    for _, r in res.iterrows():
+        try:
+            mn = int(r["match_number"])
+        except (ValueError, TypeError):
+            continue
+        if mn >= 73 and mn != 103:
+            out[mn] = r
+    return out
+
+
+def _resolve_ko_placeholder(raw, winner_of: dict) -> str:
+    """Resolve a 'Winner match X' placeholder to a real team name via winner_of.
+
+    Loops because a later round's placeholder can itself resolve to another
+    still-unresolved placeholder if winner_of hasn't reached that far yet.
+    """
+    s = str(raw or "").strip()
+    seen = set()
+    while s.startswith("Winner match ") and s not in seen:
+        seen.add(s)
+        try:
+            mn_ = int(s.split()[-1])
+        except ValueError:
+            break
+        nxt = winner_of.get(mn_, s)
+        if nxt == s:
+            break
+        s = nxt
+    return s
+
+
+def _compute_ko_winner_of(res_df: pd.DataFrame, fix_df: pd.DataFrame) -> dict:
+    """Core resolver: {match_number: winning_team_name} for completed KO matches.
+
+    Processes results in sorted match-number order and resolves each fixture's
+    home/away text through the growing winner_of dict first, so a QF fixture
+    like 'Winner match 89' (whose own fixture text is itself a placeholder
+    referencing an R32 match) resolves to the real team, not a one-level-stale
+    placeholder. Takes raw (unmerged) results/fixtures so callers can compute
+    this locally without a circular call back into get_match_results().
+    """
+    winner_of: dict[int, str] = {}
+    if res_df.empty or fix_df.empty:
+        return winner_of
+
+    _res_map = _build_ko_res_by_mn(res_df)
+    for mn in sorted(_res_map.keys()):
+        r  = _res_map[mn]
+        fx = fix_df[fix_df["match_number"] == mn]
+        if fx.empty:
+            continue
+        f   = fx.iloc[0]
+        hh  = _resolve_ko_placeholder(f["home_team"], winner_of)
+        ha  = _resolve_ko_placeholder(f["away_team"], winner_of)
+        hg  = int(float(r.get("home_goals", 0) or 0))
+        ag  = int(float(r.get("away_goals", 0) or 0))
+        pw  = str(r.get("penalty_winner", "") or "").strip()
+        if pw == "home" or (not pw and hg > ag):
+            winner_of[mn] = hh
+        elif pw == "away" or (not pw and ag > hg):
+            winner_of[mn] = ha
+    return winner_of
+
+
 def get_match_results() -> pd.DataFrame:
-    """Load match_results.csv joined with fixture team names."""
+    """Load match_results.csv joined with fixture team names.
+
+    KO 'Winner match X' placeholders are resolved to real team names wherever
+    the underlying match has been played, so every page that reads home_team/
+    away_team from this (teams.py, home.py, etc.) shows real names instead of
+    placeholders for later knockout rounds.
+    """
     p = _ROOT / "data" / "match_results.csv"
     if not p.exists():
         return pd.DataFrame()
@@ -351,6 +426,12 @@ def get_match_results() -> pd.DataFrame:
             fix = pd.read_csv(fix_p, dtype=str).fillna("")
             fix["match_number"] = pd.to_numeric(fix["match_number"], errors="coerce").astype("Int64")
             fix["match_date"] = pd.to_datetime(fix["match_date"], dayfirst=True, errors="coerce").dt.date
+
+            _winner_of = _compute_ko_winner_of(df, fix)
+            fix = fix.copy()
+            fix["home_team"] = fix["home_team"].apply(lambda s: _resolve_ko_placeholder(s, _winner_of))
+            fix["away_team"] = fix["away_team"].apply(lambda s: _resolve_ko_placeholder(s, _winner_of))
+
             df = df.merge(
                 fix[["match_number", "match_date", "home_team", "away_team", "group", "venue", "kickoff_time"]],
                 on="match_number", how="left",
@@ -360,60 +441,12 @@ def get_match_results() -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def _build_ko_res_by_mn(res: pd.DataFrame) -> dict:
-    """Return {match_number: result_row} for KO matches (mn >= 73, skip 103)."""
-    out: dict[int, object] = {}
-    if res.empty or "match_number" not in res.columns:
-        return out
-    for _, r in res.iterrows():
-        try:
-            mn = int(r["match_number"])
-        except (ValueError, TypeError):
-            continue
-        if mn >= 73 and mn != 103:
-            out[mn] = r
-    return out
-
-
 @st.cache_data(ttl=10)
 def get_ko_winner_of() -> dict:
-    """Return {match_number: winning_team_name} for completed KO matches.
-
-    Processes results in sorted match-number order so R32 winners are known
-    before R16 fixtures (which store 'Winner match X' placeholders) are processed.
-    """
+    """Return {match_number: winning_team_name} for completed KO matches."""
     res = get_match_results()
     fix = get_fixtures()
-    winner_of: dict[int, str] = {}
-    if res.empty or fix.empty:
-        return winner_of
-
-    def _resolve(raw: str) -> str:
-        s = str(raw or "").strip()
-        if s.startswith("Winner match "):
-            try:
-                return winner_of.get(int(s.split()[-1]), s)
-            except ValueError:
-                return s
-        return s
-
-    _res_map = _build_ko_res_by_mn(res)
-    for mn in sorted(_res_map.keys()):
-        r  = _res_map[mn]
-        fx = fix[fix["match_number"] == mn]
-        if fx.empty:
-            continue
-        f   = fx.iloc[0]
-        hh  = _resolve(str(f["home_team"]))
-        ha  = _resolve(str(f["away_team"]))
-        hg  = int(float(r.get("home_goals", 0) or 0))
-        ag  = int(float(r.get("away_goals", 0) or 0))
-        pw  = str(r.get("penalty_winner", "") or "").strip()
-        if pw == "home" or (not pw and hg > ag):
-            winner_of[mn] = hh
-        elif pw == "away" or (not pw and ag > hg):
-            winner_of[mn] = ha
-    return winner_of
+    return _compute_ko_winner_of(res, fix)
 
 
 @st.cache_data(ttl=10)
