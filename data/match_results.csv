@@ -94,3 +94,4 @@ match_number,home_goals,away_goals,extra_time,penalty_winner,comeback_home,comeb
 93,0,1,0,,0,0,0,0,0,0,0,0,0,0,0,0
 94,1,4,0,,0,0,0,0,0,0,0,0,0,0,0,0
 95,3,2,0,,1,0,0,0,0,0,0,0,0,0,0,0
+96,1,4,1,home,0,0,0,0,0,0,0,0,0,0,0,0
