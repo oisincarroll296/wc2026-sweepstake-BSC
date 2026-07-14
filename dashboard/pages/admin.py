@@ -66,22 +66,30 @@ _TAB_NAMES = [
     "Tournament Results",
     "WhatsApp", "Draw Broadcast", "Deadlines", "Snapshots", "Budgets",
 ]
-# Without on_change="rerun"/key, st.tabs() only remembers its selection in the
-# frontend widget itself — a mobile browser backgrounding the tab (or a flaky
-# connection reconnecting) remounts that widget from scratch and snaps back to
-# the first tab. Track the active tab in session state + the URL so admin
-# actions (e.g. saving a Results Entry) don't bounce back to Draw Events.
+# st.tabs() only remembers its selection in the frontend widget itself (older
+# Streamlit versions don't even support a key/default for it at all) — a
+# mobile browser backgrounding the tab, or a flaky connection reconnecting,
+# remounts that widget from scratch and snaps back to the first tab. Use a
+# plain st.radio (stateful via key= on every Streamlit version we support)
+# tracked in session state + the URL, so admin actions (e.g. saving a
+# Results Entry) don't bounce back to Draw Events.
 _default_tab = st.session_state.get("admin_active_tab", st.query_params.get("admin_tab", _TAB_NAMES[0]))
 if _default_tab not in _TAB_NAMES:
     _default_tab = _TAB_NAMES[0]
+if "admin_active_tab" not in st.session_state:
+    st.session_state["admin_active_tab"] = _default_tab
 
-tabs = st.tabs(_TAB_NAMES, default=_default_tab, key="admin_active_tab", on_change="rerun")
-st.query_params["admin_tab"] = st.session_state["admin_active_tab"]
+selected_tab = st.radio(
+    "Section", _TAB_NAMES, key="admin_active_tab",
+    horizontal=True, label_visibility="collapsed",
+)
+st.query_params["admin_tab"] = selected_tab
+st.divider()
 
 # ─────────────────────────────────────────────
 # Tab 0: Draw Events
 # ─────────────────────────────────────────────
-with tabs[0]:
+if selected_tab == _TAB_NAMES[0]:
     st.subheader("Run Draw Events")
 
     st.caption(
@@ -238,7 +246,7 @@ with tabs[0]:
 # ─────────────────────────────────────────────
 # Tab 1: Purchases
 # ─────────────────────────────────────────────
-with tabs[1]:
+if selected_tab == _TAB_NAMES[1]:
     st.subheader("Add Purchase")
     st.caption("Record a payment received via the Shared Revolut Pocket.")
 
@@ -441,7 +449,7 @@ with tabs[1]:
 # ─────────────────────────────────────────────
 # Tab 2: Picks (captains + predictions)
 # ─────────────────────────────────────────────
-with tabs[2]:
+if selected_tab == _TAB_NAMES[2]:
     st.subheader("Captain & Prediction Picks")
     st.caption(
         "Enter each player's Pre-Tournament captain, Knockout captain, "
@@ -575,7 +583,7 @@ with tabs[2]:
 # ─────────────────────────────────────────────
 # Tab 3: Locking
 # ─────────────────────────────────────────────
-with tabs[3]:
+if selected_tab == _TAB_NAMES[3]:
     st.subheader("Lock Controls")
     st.caption("Locks are time-based — they trigger automatically when the deadline passes. Use the Deadlines tab to adjust timing. The buttons below force an immediate lock.")
 
@@ -657,7 +665,7 @@ with tabs[3]:
 # ─────────────────────────────────────────────
 # Tab 4: Results Entry
 # ─────────────────────────────────────────────
-with tabs[4]:
+if selected_tab == _TAB_NAMES[4]:
     from datetime import date as _date, timedelta as _td
     from dashboard.data import (
         get_fixtures, get_match_results, save_match_result_and_recalculate,
@@ -761,17 +769,41 @@ with tabs[4]:
         fixtures_df = get_fixtures()
         results_df  = get_match_results()
 
-        # Build winner_of dict so KO placeholder names resolve to real teams
+        # Build winner_of dict so KO placeholder names resolve to real teams.
+        # A QF fixture's home/away text is itself a placeholder like
+        # "Winner match 89", and match 89's own fixture text is in turn a
+        # placeholder referencing R32 matches — so this must process matches
+        # in ascending order and resolve each fixture through the
+        # already-built _winner_of before recording that match's winner,
+        # otherwise later rounds show one-level-stale placeholders (e.g.
+        # "Winner match 77" instead of the actual R32 winner).
         _winner_of: dict[int, str] = {}
+
+        def _resolve_placeholder(raw: str) -> str:
+            s = str(raw or "").strip()
+            seen = set()
+            while s.startswith("Winner match ") and s not in seen:
+                seen.add(s)
+                try:
+                    mn_ = int(s.split()[-1])
+                except ValueError:
+                    break
+                s = _winner_of.get(mn_, s)
+            return s
+
         if not results_df.empty and not fixtures_df.empty:
-            for _, _rr in results_df.iterrows():
-                _rmn = int(pd.to_numeric(_rr.get("match_number", 0), errors="coerce") or 0)
+            _rr_sorted = results_df.copy()
+            _rr_sorted["match_number"] = pd.to_numeric(_rr_sorted["match_number"], errors="coerce")
+            _rr_sorted = _rr_sorted.dropna(subset=["match_number"]).sort_values("match_number")
+            for _, _rr in _rr_sorted.iterrows():
+                _rmn = int(_rr["match_number"])
                 if _rmn < 73:
                     continue
                 _rf = fixtures_df[fixtures_df["match_number"] == _rmn]
                 if _rf.empty:
                     continue
-                _rh = str(_rf.iloc[0]["home_team"]); _ra = str(_rf.iloc[0]["away_team"])
+                _rh = _resolve_placeholder(_rf.iloc[0]["home_team"])
+                _ra = _resolve_placeholder(_rf.iloc[0]["away_team"])
                 _rhg = int(float(_rr.get("home_goals", 0) or 0))
                 _rag = int(float(_rr.get("away_goals", 0) or 0))
                 _rpw = str(_rr.get("penalty_winner", "") or "").strip()
@@ -782,12 +814,9 @@ with tabs[4]:
 
         def _resolve_team(raw: str) -> str:
             s = str(raw or "").strip()
-            if s.startswith("Winner match "):
-                mn_ = int(s.split()[-1])
-                return _winner_of.get(mn_, s)
             if s.startswith("Runner-up match "):
                 return s  # keep as-is (rare)
-            return s
+            return _resolve_placeholder(s)
 
         if fixtures_df.empty:
             st.warning("No fixture data found. Ensure data/fixtures.csv exists.")
@@ -1052,7 +1081,7 @@ with tabs[4]:
 # ─────────────────────────────────────────────
 # Tab 5: Special Events
 # ─────────────────────────────────────────────
-with tabs[5]:
+if selected_tab == _TAB_NAMES[5]:
     st.subheader("Special Events")
     st.caption(
         "Log match events that are awarded manually: hat tricks, shirt-removal celebrations, "
@@ -1152,7 +1181,7 @@ with tabs[5]:
 # ─────────────────────────────────────────────
 # Tab 6: Tournament Results
 # ─────────────────────────────────────────────
-with tabs[6]:
+if selected_tab == _TAB_NAMES[6]:
     import json as _json
     st.subheader("Tournament Results")
     st.caption(
@@ -1207,7 +1236,7 @@ with tabs[6]:
 # ─────────────────────────────────────────────
 # Tab 7: WhatsApp Update
 # ─────────────────────────────────────────────
-with tabs[7]:
+if selected_tab == _TAB_NAMES[7]:
     st.subheader("Generate WhatsApp Update")
     st.caption("Generates a formatted standings update to paste into your WhatsApp group.")
 
@@ -1230,7 +1259,7 @@ with tabs[7]:
 # ─────────────────────────────────────────────
 # Tab 8: Draw Broadcast
 # ─────────────────────────────────────────────
-with tabs[8]:
+if selected_tab == _TAB_NAMES[8]:
     st.subheader("Generate Draw Broadcast")
     st.caption("Generates a formatted draw announcement to paste into your WhatsApp group.")
 
@@ -1290,7 +1319,7 @@ with tabs[8]:
 # ─────────────────────────────────────────────
 # Tab 9: Deadlines
 # ─────────────────────────────────────────────
-with tabs[9]:
+if selected_tab == _TAB_NAMES[9]:
     import json
     from datetime import datetime, timezone, timedelta, date, time as dtime
     from dashboard.data import get_deadlines, save_deadlines, countdown, DEADLINE_LABELS
@@ -1345,7 +1374,7 @@ with tabs[9]:
 # ─────────────────────────────────────────────
 # Tab 10: Snapshots
 # ─────────────────────────────────────────────
-with tabs[10]:
+if selected_tab == _TAB_NAMES[10]:
     import shutil
     from datetime import datetime as _dt
 
@@ -1406,7 +1435,7 @@ with tabs[10]:
 # ─────────────────────────────────────────────
 # Tab 11: Budgets
 # ─────────────────────────────────────────────
-with tabs[11]:
+if selected_tab == _TAB_NAMES[11]:
     st.subheader("Player Budgets")
     st.caption(
         "Budget = money each player has contributed to the Revolut pocket. "
