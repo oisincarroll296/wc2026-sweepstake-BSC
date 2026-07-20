@@ -15,7 +15,7 @@ import pandas as pd
 from dashboard.data import (
     get_overall_leaderboard, get_assignments, get_match_stats,
     get_tier_map, get_captains, get_prize_pool,
-    get_ko_winner_of, _resolve_ko_placeholder,
+    get_ko_winner_of, get_ko_loser_of, _resolve_ko_placeholder,
 )
 from dashboard.components.ui import page_header
 
@@ -125,14 +125,16 @@ def _build_story_context(date_from: date | None = None, date_to: date | None = N
     fixtures["match_number"] = pd.to_numeric(fixtures["match_number"], errors="coerce")
     fixtures["_date"] = pd.to_datetime(fixtures["match_date"], format="%d/%m/%Y", errors="coerce").dt.date
 
-    # fixtures.csv stores KO rounds as "Winner match X" placeholders; resolve
-    # to the real team name wherever that match has been played, so later
-    # rounds don't narrate "Winner match 95 beat Winner match 96".
+    # fixtures.csv stores KO rounds as "Winner match X" / "Runner-up match X"
+    # (3rd-place playoff) placeholders; resolve to the real team name wherever
+    # that match has been played, so later rounds don't narrate
+    # "Winner match 95 beat Winner match 96".
     _winner_of_story = get_ko_winner_of()
+    _loser_of_story  = get_ko_loser_of()
     fixtures["home_team"] = fixtures["home_team"].apply(
-        lambda s: _resolve_ko_placeholder(s, _winner_of_story))
+        lambda s: _resolve_ko_placeholder(s, _winner_of_story, _loser_of_story))
     fixtures["away_team"] = fixtures["away_team"].apply(
-        lambda s: _resolve_ko_placeholder(s, _winner_of_story))
+        lambda s: _resolve_ko_placeholder(s, _winner_of_story, _loser_of_story))
 
     results = pd.read_csv(_RESULTS_PATH, dtype=str)
     for col in ["match_number","home_goals","away_goals","extra_time",

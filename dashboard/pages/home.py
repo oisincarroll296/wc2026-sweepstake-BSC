@@ -14,7 +14,7 @@ from dashboard.data import (
     get_paid_count, get_pack_count, get_audit_log, get_events,
     get_assignments, get_participants, get_deadlines, countdown, DEADLINE_LABELS,
     get_fixtures, get_match_results, get_match_stats, get_tier_map, get_purchases,
-    get_eliminated_teams, get_ko_winner_of,
+    get_eliminated_teams, get_ko_winner_of, get_ko_loser_of,
 )
 from dashboard.components.ui import page_header, empty_state
 
@@ -196,6 +196,7 @@ _purch_home = get_purchases()
 
 _elim_home     = get_eliminated_teams()
 _winner_of_home = get_ko_winner_of()
+_loser_of_home  = get_ko_loser_of()
 
 def _alive_home(t: str) -> bool:
     return t not in _elim_home
@@ -205,6 +206,9 @@ def _resolve_home(raw: str) -> str:
     if s.startswith("Winner match "):
         mn_ = int(s.split()[-1])
         return _winner_of_home.get(mn_, s)
+    if s.startswith("Runner-up match "):
+        mn_ = int(s.split()[-1])
+        return _loser_of_home.get(mn_, s)
     return s
 
 _pp_home: dict[str, set] = {}

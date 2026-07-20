@@ -769,26 +769,30 @@ if selected_tab == _TAB_NAMES[4]:
         fixtures_df = get_fixtures()
         results_df  = get_match_results()
 
-        # Build winner_of dict so KO placeholder names resolve to real teams.
-        # A QF fixture's home/away text is itself a placeholder like
-        # "Winner match 89", and match 89's own fixture text is in turn a
-        # placeholder referencing R32 matches — so this must process matches
-        # in ascending order and resolve each fixture through the
-        # already-built _winner_of before recording that match's winner,
+        # Build winner_of/loser_of dicts so KO placeholder names resolve to
+        # real teams. A QF fixture's home/away text is itself a placeholder
+        # like "Winner match 89", and match 89's own fixture text is in turn
+        # a placeholder referencing R32 matches — so this must process
+        # matches in ascending order and resolve each fixture through the
+        # already-built dicts before recording that match's winner/loser,
         # otherwise later rounds show one-level-stale placeholders (e.g.
-        # "Winner match 77" instead of the actual R32 winner).
+        # "Winner match 77" instead of the actual R32 winner). loser_of
+        # resolves "Runner-up match X", used by the 3rd-place playoff (103),
+        # which pits the two semi-final losers against each other.
         _winner_of: dict[int, str] = {}
+        _loser_of: dict[int, str] = {}
 
         def _resolve_placeholder(raw: str) -> str:
             s = str(raw or "").strip()
             seen = set()
-            while s.startswith("Winner match ") and s not in seen:
+            while (s.startswith("Winner match ") or s.startswith("Runner-up match ")) and s not in seen:
                 seen.add(s)
                 try:
                     mn_ = int(s.split()[-1])
                 except ValueError:
                     break
-                s = _winner_of.get(mn_, s)
+                src = _winner_of if s.startswith("Winner match ") else _loser_of
+                s = src.get(mn_, s)
             return s
 
         if not results_df.empty and not fixtures_df.empty:
@@ -809,14 +813,13 @@ if selected_tab == _TAB_NAMES[4]:
                 _rpw = str(_rr.get("penalty_winner", "") or "").strip()
                 if _rpw == "home" or (not _rpw and _rhg > _rag):
                     _winner_of[_rmn] = _rh
+                    _loser_of[_rmn]  = _ra
                 elif _rpw == "away" or (not _rpw and _rag > _rhg):
                     _winner_of[_rmn] = _ra
+                    _loser_of[_rmn]  = _rh
 
         def _resolve_team(raw: str) -> str:
-            s = str(raw or "").strip()
-            if s.startswith("Runner-up match "):
-                return s  # keep as-is (rare)
-            return _resolve_placeholder(s)
+            return _resolve_placeholder(str(raw or "").strip())
 
         if fixtures_df.empty:
             st.warning("No fixture data found. Ensure data/fixtures.csv exists.")

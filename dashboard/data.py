@@ -347,40 +347,47 @@ def _build_ko_res_by_mn(res: pd.DataFrame) -> dict:
     return out
 
 
-def _resolve_ko_placeholder(raw, winner_of: dict) -> str:
-    """Resolve a 'Winner match X' placeholder to a real team name via winner_of.
+def _resolve_ko_placeholder(raw, winner_of: dict, loser_of: dict | None = None) -> str:
+    """Resolve a 'Winner match X' / 'Runner-up match X' placeholder to a real
+    team name via winner_of/loser_of.
 
-    Loops because a later round's placeholder can itself resolve to another
-    still-unresolved placeholder if winner_of hasn't reached that far yet.
+    'Runner-up match X' is how the 3rd-place playoff (match 103) references
+    the two semi-final losers. Loops because a later round's placeholder can
+    itself resolve to another still-unresolved placeholder if winner_of/
+    loser_of hasn't reached that far yet.
     """
     s = str(raw or "").strip()
     seen = set()
-    while s.startswith("Winner match ") and s not in seen:
+    while (s.startswith("Winner match ") or s.startswith("Runner-up match ")) and s not in seen:
         seen.add(s)
         try:
             mn_ = int(s.split()[-1])
         except ValueError:
             break
-        nxt = winner_of.get(mn_, s)
+        src = winner_of if s.startswith("Winner match ") else (loser_of or {})
+        nxt = src.get(mn_, s)
         if nxt == s:
             break
         s = nxt
     return s
 
 
-def _compute_ko_winner_of(res_df: pd.DataFrame, fix_df: pd.DataFrame) -> dict:
-    """Core resolver: {match_number: winning_team_name} for completed KO matches.
+def _compute_ko_winner_of(res_df: pd.DataFrame, fix_df: pd.DataFrame) -> tuple[dict, dict]:
+    """Core resolver: ({match_number: winning_team_name}, {match_number: losing_team_name})
+    for completed KO matches.
 
     Processes results in sorted match-number order and resolves each fixture's
-    home/away text through the growing winner_of dict first, so a QF fixture
-    like 'Winner match 89' (whose own fixture text is itself a placeholder
-    referencing an R32 match) resolves to the real team, not a one-level-stale
-    placeholder. Takes raw (unmerged) results/fixtures so callers can compute
-    this locally without a circular call back into get_match_results().
+    home/away text through the growing winner_of/loser_of dicts first, so a QF
+    fixture like 'Winner match 89' (whose own fixture text is itself a
+    placeholder referencing an R32 match) resolves to the real team, not a
+    one-level-stale placeholder. Takes raw (unmerged) results/fixtures so
+    callers can compute this locally without a circular call back into
+    get_match_results().
     """
     winner_of: dict[int, str] = {}
+    loser_of: dict[int, str] = {}
     if res_df.empty or fix_df.empty:
-        return winner_of
+        return winner_of, loser_of
 
     _res_map = _build_ko_res_by_mn(res_df)
     for mn in sorted(_res_map.keys()):
@@ -389,16 +396,18 @@ def _compute_ko_winner_of(res_df: pd.DataFrame, fix_df: pd.DataFrame) -> dict:
         if fx.empty:
             continue
         f   = fx.iloc[0]
-        hh  = _resolve_ko_placeholder(f["home_team"], winner_of)
-        ha  = _resolve_ko_placeholder(f["away_team"], winner_of)
+        hh  = _resolve_ko_placeholder(f["home_team"], winner_of, loser_of)
+        ha  = _resolve_ko_placeholder(f["away_team"], winner_of, loser_of)
         hg  = int(float(r.get("home_goals", 0) or 0))
         ag  = int(float(r.get("away_goals", 0) or 0))
         pw  = str(r.get("penalty_winner", "") or "").strip()
         if pw == "home" or (not pw and hg > ag):
             winner_of[mn] = hh
+            loser_of[mn]  = ha
         elif pw == "away" or (not pw and ag > hg):
             winner_of[mn] = ha
-    return winner_of
+            loser_of[mn]  = hh
+    return winner_of, loser_of
 
 
 def get_match_results() -> pd.DataFrame:
@@ -427,10 +436,10 @@ def get_match_results() -> pd.DataFrame:
             fix["match_number"] = pd.to_numeric(fix["match_number"], errors="coerce").astype("Int64")
             fix["match_date"] = pd.to_datetime(fix["match_date"], dayfirst=True, errors="coerce").dt.date
 
-            _winner_of = _compute_ko_winner_of(df, fix)
+            _winner_of, _loser_of = _compute_ko_winner_of(df, fix)
             fix = fix.copy()
-            fix["home_team"] = fix["home_team"].apply(lambda s: _resolve_ko_placeholder(s, _winner_of))
-            fix["away_team"] = fix["away_team"].apply(lambda s: _resolve_ko_placeholder(s, _winner_of))
+            fix["home_team"] = fix["home_team"].apply(lambda s: _resolve_ko_placeholder(s, _winner_of, _loser_of))
+            fix["away_team"] = fix["away_team"].apply(lambda s: _resolve_ko_placeholder(s, _winner_of, _loser_of))
 
             df = df.merge(
                 fix[["match_number", "match_date", "home_team", "away_team", "group", "venue", "kickoff_time"]],
@@ -446,7 +455,21 @@ def get_ko_winner_of() -> dict:
     """Return {match_number: winning_team_name} for completed KO matches."""
     res = get_match_results()
     fix = get_fixtures()
-    return _compute_ko_winner_of(res, fix)
+    winner_of, _ = _compute_ko_winner_of(res, fix)
+    return winner_of
+
+
+@st.cache_data(ttl=10)
+def get_ko_loser_of() -> dict:
+    """Return {match_number: losing_team_name} for completed KO matches.
+
+    Used to resolve 'Runner-up match X' placeholders — e.g. the 3rd-place
+    playoff (match 103) pits the two semi-final losers against each other.
+    """
+    res = get_match_results()
+    fix = get_fixtures()
+    _, loser_of = _compute_ko_winner_of(res, fix)
+    return loser_of
 
 
 @st.cache_data(ttl=10)

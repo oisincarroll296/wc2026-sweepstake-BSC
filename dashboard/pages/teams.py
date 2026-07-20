@@ -10,7 +10,7 @@ from datetime import date, timedelta
 from dashboard.data import (
     get_teams, get_assignments, get_match_stats, get_fixtures,
     get_match_results, get_team_ownership_data, get_tier_map,
-    get_ko_winner_of, _resolve_ko_placeholder,
+    get_ko_winner_of, get_ko_loser_of, _resolve_ko_placeholder,
 )
 from dashboard.config import TIER_COLORS
 from dashboard.components.ui import page_header, empty_state, searchable_table
@@ -25,15 +25,17 @@ results_df  = get_match_results()
 tier_map    = get_tier_map()
 
 # get_fixtures() is intentionally raw (unresolved KO placeholders); resolve
-# 'Winner match X' to the real team name wherever that match has been played,
-# so the Fixtures tab doesn't show stale placeholders for later KO rounds.
+# 'Winner match X' / 'Runner-up match X' (3rd-place playoff) to the real team
+# name wherever that match has been played, so the Fixtures tab doesn't show
+# stale placeholders for later KO rounds.
 if not fixtures_df.empty:
     _winner_of_teams = get_ko_winner_of()
+    _loser_of_teams  = get_ko_loser_of()
     fixtures_df = fixtures_df.copy()
     fixtures_df["home_team"] = fixtures_df["home_team"].apply(
-        lambda s: _resolve_ko_placeholder(s, _winner_of_teams))
+        lambda s: _resolve_ko_placeholder(s, _winner_of_teams, _loser_of_teams))
     fixtures_df["away_team"] = fixtures_df["away_team"].apply(
-        lambda s: _resolve_ko_placeholder(s, _winner_of_teams))
+        lambda s: _resolve_ko_placeholder(s, _winner_of_teams, _loser_of_teams))
 
 TIER_LABELS = {1: "T1", 2: "T2", 3: "T3", 4: "T4"}
 
