@@ -118,6 +118,80 @@ def _build_best_day_table() -> list[dict]:
     ]
 
 
+def _build_leaderboard_history() -> dict:
+    """Rank-over-time facts from score_history.csv, so the story can accurately
+    narrate who used to lead and fell behind instead of hallucinating it —
+    the LLM is instructed to never invent facts, so without this the "how did
+    the leader change" narrative has nothing real to draw on.
+    """
+    empty = {"leader_changes": [], "days_led_count": {}, "fell_from_top3": []}
+    if not _SCORE_HISTORY_PATH.exists():
+        return empty
+    hist = pd.read_csv(_SCORE_HISTORY_PATH, dtype=str)
+    if hist.empty or "Date" not in hist.columns:
+        return empty
+    if _PLAYERS_PATH.exists():
+        current = set(pd.read_csv(_PLAYERS_PATH, dtype=str)["Player"].dropna().tolist())
+        hist = hist[hist["Player"].isin(current)]
+    if hist.empty:
+        return empty
+    hist["Date"]   = pd.to_datetime(hist["Date"], errors="coerce")
+    hist["Points"] = pd.to_numeric(hist["Points"], errors="coerce").fillna(0)
+    hist = hist.dropna(subset=["Date"]).sort_values("Date")
+
+    leader_changes: list[dict] = []
+    days_led_count: dict[str, int] = {}
+    peak_rank: dict[str, dict] = {}   # player -> {"rank":, "date":, "points":}
+    prev_leader = None
+
+    for dt, day in hist.groupby("Date", sort=True):
+        day = day.sort_values("Points", ascending=False).reset_index(drop=True)
+        date_str = dt.strftime("%d %b")
+        for i, row in day.iterrows():
+            rank = i + 1
+            player = str(row["Player"])
+            pts = float(row["Points"])
+            if player not in peak_rank or rank < peak_rank[player]["rank"]:
+                peak_rank[player] = {"rank": rank, "date": date_str, "points": pts}
+        leader_row = day.iloc[0]
+        leader = str(leader_row["Player"])
+        days_led_count[leader] = days_led_count.get(leader, 0) + 1
+        if leader != prev_leader:
+            leader_changes.append({
+                "date": date_str, "new_leader": leader,
+                "points": round(float(leader_row["Points"]), 1),
+                "previous_leader": prev_leader,
+            })
+            prev_leader = leader
+
+    # Current (most recent date) standings, to compare against each player's peak
+    last_date = hist["Date"].max()
+    current_day = hist[hist["Date"] == last_date].sort_values("Points", ascending=False).reset_index(drop=True)
+    current_rank: dict[str, dict] = {
+        str(r["Player"]): {"rank": i + 1, "points": float(r["Points"])}
+        for i, r in current_day.iterrows()
+    }
+
+    fell_from_top3 = []
+    for player, peak in peak_rank.items():
+        cur = current_rank.get(player)
+        if not cur:
+            continue
+        if peak["rank"] <= 3 and cur["rank"] > 3:
+            fell_from_top3.append({
+                "player": player,
+                "peak_rank": peak["rank"], "peak_date": peak["date"], "peak_points": round(peak["points"], 1),
+                "current_rank": cur["rank"], "current_points": round(cur["points"], 1),
+            })
+    fell_from_top3.sort(key=lambda x: x["peak_rank"])
+
+    return {
+        "leader_changes":  leader_changes,
+        "days_led_count":  days_led_count,
+        "fell_from_top3":  fell_from_top3,
+    }
+
+
 # ── Context builder ────────────────────────────────────────────────────────────
 
 def _build_story_context(date_from: date | None = None, date_to: date | None = None) -> dict:
@@ -375,6 +449,7 @@ def _build_story_context(date_from: date | None = None, date_to: date | None = N
         "avg_goals_per_game":   round(total_goals/n_matches,2) if n_matches else 0,
         "prize_pool":           prize_pool,
         "current_standings":    slim_standings,
+        "leaderboard_history":  _build_leaderboard_history(),
         "unpaid_players_in_top_half": slim_unpaid,
         "match_results":        notable_matches,
         "other_matches_no_events": other_n,
@@ -442,7 +517,7 @@ OUTPUT — respond ONLY with a single valid JSON object, no markdown fences:
     {{"name": "player or team name", "team": "national team", "context": "what they did e.g. scored hat trick"}},
     {{"name": "...", "team": "...", "context": "..."}}
   ],
-  "sweepstake_digest": "4-5 sentences: who leads, who is climbing, name unpaid players doing well and suggest they pay up",
+  "sweepstake_digest": "4-5 sentences: who leads, who is climbing, name unpaid players doing well and suggest they pay up. If leaderboard_history.fell_from_top3 or leader_changes is non-empty and relevant to the angle, use it to explain HOW the standings shifted (e.g. 'X led from 12 Jun until Y overtook them on 3 Jul').",
   "pull_quote": "One vivid standalone sentence for a big pull quote",
   "looking_ahead": "2-3 sentences. ONLY reference fixtures listed in upcoming_owned_fixtures. Name the sweepstake owners who have skin in the game. If upcoming_owned_fixtures is empty, comment on a standings battle instead. NEVER mention a fixture not in the data."
 }}
@@ -458,6 +533,7 @@ RULES:
 - player_spotlight must be the single most notable player from the data
 - image_subjects: list 2-3 subjects to generate AI artwork for (player names or team moments)
 - Tone: passionate tabloid football journalist
+- leaderboard_history is the ONLY source of truth for standings-over-time claims: leader_changes lists every time the #1 spot changed hands (date, new_leader, points, previous_leader); days_led_count tallies days spent at #1; fell_from_top3 lists players who were once top-3 (peak_rank/peak_date/peak_points) but have since dropped out (current_rank/current_points). If the ANGLE asks for a final recap or "how the top 3 won" / "who fell behind", build sections and sweepstake_digest around these exact facts — name specific dates and points, don't just assert someone "led for a while" without the data to back it.
 """
 
     _models = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
@@ -1061,6 +1137,28 @@ if _is_admin:
         unsafe_allow_html=True,
     )
     _today = date.today()
+
+    if st.button(
+        "🏆 Final Tournament Recap",
+        help="One-click special edition: how the top 3 finishers won it, and who used to "
+             "lead the table but fell behind — grounded in the actual day-by-day standings.",
+    ):
+        st.session_state["story_period"] = "Full tournament"
+        st.session_state["story_topic"] = (
+            "Final tournament recap: how the top 3 finishers won it, and how anyone who "
+            "used to lead the table fell behind"
+        )
+        st.session_state["story_suggestions"] = (
+            "Use leaderboard_history.leader_changes and fell_from_top3 to explain exactly "
+            "how the standings shifted over the tournament, with real dates and points.\n"
+            "Give each of the current top 3 players a clear account of how they built their lead.\n"
+            "If anyone who used to be #1 or top-3 has since fallen out of the top 3, explain "
+            "why using only the data provided (e.g. a rival's captain bonus, prediction points, "
+            "or a string of team eliminations)."
+        )
+        st.session_state["_story_trigger_generate"] = True
+        st.rerun()
+
     _rc1, _rc2, _rc3 = st.columns([2,1,1])
     with _rc1:
         _period_choice = st.radio(
@@ -1097,6 +1195,9 @@ if _is_admin:
         ),
         height=100, key="story_suggestions",
     )
+
+    if st.session_state.pop("_story_trigger_generate", False):
+        _generate_clicked = True
 
     if _cache:
         st.caption(
