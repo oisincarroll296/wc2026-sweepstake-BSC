@@ -13,7 +13,7 @@ import streamlit as st
 import pandas as pd
 
 from dashboard.data import (
-    get_overall_leaderboard, get_assignments, get_match_stats,
+    get_overall_leaderboard, get_prize_leaderboard, get_assignments, get_match_stats,
     get_tier_map, get_captains, get_prize_pool,
     get_ko_winner_of, get_ko_loser_of, _resolve_ko_placeholder,
 )
@@ -25,6 +25,7 @@ _RESULTS_PATH       = _ROOT / "data" / "match_results.csv"
 _PLAYERS_PATH       = _ROOT / "data" / "players.csv"
 _SCORE_HISTORY_PATH = _ROOT / "data" / "score_history.csv"
 _CACHE_PATH         = _ROOT / "data" / "story_cache.json"
+_TOURNAMENT_RESULTS_PATH = _ROOT / "data" / "tournament_results.json"
 
 _UPSET_BONUS = {1: 15, 2: 30, 3: 50}
 
@@ -225,11 +226,42 @@ def _build_story_context(date_from: date | None = None, date_to: date | None = N
     captains_df = get_captains()
     players_df  = pd.read_csv(_PLAYERS_PATH, dtype=str).fillna("") if _PLAYERS_PATH.exists() else pd.DataFrame()
 
+    world_cup_winner = ""
+    if _TOURNAMENT_RESULTS_PATH.exists():
+        try:
+            world_cup_winner = json.loads(_TOURNAMENT_RESULTS_PATH.read_text(encoding="utf-8")).get("world_cup_winner", "")
+        except Exception:
+            pass
+    tournament_complete = bool(world_cup_winner)
+
     try:
         prize_info = get_prize_pool()
         prize_pool = prize_info.get("current_pot", prize_info.get("total", 0))
+        prize_splits = {
+            "first_prize":  prize_info.get("first_prize", 0),
+            "second_prize": prize_info.get("second_prize", 0),
+            "third_prize":  prize_info.get("third_prize", 0),
+        }
     except Exception:
         prize_pool = 0
+        prize_splits = {"first_prize": 0, "second_prize": 0, "third_prize": 0}
+
+    # PAID-only ranking — who actually wins prize money (unpaid players can
+    # top the all-players standings but aren't eligible for a payout).
+    try:
+        plb = get_prize_leaderboard()
+        prize_winners = [
+            {
+                "rank": int(row.get("Rank", i + 1)),
+                "player": str(row.get("Player", "")),
+                "total_pts": round(float(row.get("TotalPoints", 0)), 1),
+                "prize_eur": [prize_splits["first_prize"], prize_splits["second_prize"], prize_splits["third_prize"]][i]
+                             if i < 3 else 0,
+            }
+            for i, (_, row) in enumerate(plb.iterrows())
+        ][:3]
+    except Exception:
+        prize_winners = []
 
     ownership: dict[str, list[str]] = {}
     for player, teams in assignments.items():
@@ -448,6 +480,9 @@ def _build_story_context(date_from: date | None = None, date_to: date | None = N
         "goals_in_period":      total_goals,
         "avg_goals_per_game":   round(total_goals/n_matches,2) if n_matches else 0,
         "prize_pool":           prize_pool,
+        "prize_winners":        prize_winners,
+        "tournament_complete":  tournament_complete,
+        "world_cup_winner":     world_cup_winner,
         "current_standings":    slim_standings,
         "leaderboard_history":  _build_leaderboard_history(),
         "unpaid_players_in_top_half": slim_unpaid,
@@ -477,13 +512,38 @@ def _generate_story(context: dict, api_key: str, topic: str = "", suggestions: s
     extras_block = ("\n\n" + "\n\n".join(extras)) if extras else ""
 
     n_players = len(context.get("current_standings", []))
+    tournament_complete = bool(context.get("tournament_complete"))
+    tense_rule = (
+        (
+            "THE TOURNAMENT IS OVER — the final has been played and "
+            f"{context.get('world_cup_winner','the champion')} won the World Cup. "
+            "Write entirely in PAST TENSE, as a final/closing edition. Never write 'will', "
+            "'is looking to', 'anyone's game', 'it's going to be' or any language implying "
+            "matches remain — there are none. The sweepstake winner is DECIDED. Frame this as "
+            "a victory lap / final verdict, not a mid-tournament update."
+        )
+        if tournament_complete else
+        "The tournament is still in progress — matches remain. Present tense for the "
+        "current state, and it's fine to speculate about what's still to come."
+    )
     system = (
         f"You are a sharp tabloid football journalist writing the front page of a private "
         f"World Cup 2026 sweepstake newspaper. Your audience is {n_players} friends. "
         "You write like a passionate sports tabloid — vivid, dramatic, specific, occasionally cheeky. "
         "Always connect on-pitch events to their sweepstake consequences (who owns the team, points earned). "
         "CRITICAL: Never invent or hallucinate match results, fixtures, or scorelines. "
-        "Only reference facts present in the DATA block."
+        "Only reference facts present in the DATA block. "
+        f"{tense_rule}"
+    )
+
+    looking_ahead_desc = (
+        "2-3 sentences. The tournament is OVER — do NOT reference fixtures or say what's "
+        "coming up. Instead give a closing verdict: sum up the sweepstake winner's triumph "
+        "and/or a final word on the biggest turnaround in the standings."
+        if tournament_complete else
+        "2-3 sentences. ONLY reference fixtures listed in upcoming_owned_fixtures. Name the "
+        "sweepstake owners who have skin in the game. If upcoming_owned_fixtures is empty, "
+        "comment on a standings battle instead. NEVER mention a fixture not in the data."
     )
 
     user = f"""Write a complete newspaper edition covering: {context['period']}.
@@ -517,9 +577,9 @@ OUTPUT — respond ONLY with a single valid JSON object, no markdown fences:
     {{"name": "player or team name", "team": "national team", "context": "what they did e.g. scored hat trick"}},
     {{"name": "...", "team": "...", "context": "..."}}
   ],
-  "sweepstake_digest": "4-5 sentences: who leads, who is climbing, name unpaid players doing well and suggest they pay up. If leaderboard_history.fell_from_top3 or leader_changes is non-empty and relevant to the angle, use it to explain HOW the standings shifted (e.g. 'X led from 12 Jun until Y overtook them on 3 Jul').",
+  "sweepstake_digest": "4-5 sentences: who leads, who is climbing, name unpaid players doing well and suggest they pay up (skip this if tournament_complete — it's too late for them to collect any prize now). If leaderboard_history.fell_from_top3 or leader_changes is non-empty and relevant to the angle, use it to explain HOW the standings shifted (e.g. 'X led from 12 Jun until Y overtook them on 3 Jul'). If a player in current_standings' top 3 by points is marked unpaid (paid: false) while prize_winners' top 3 differs, point out that the prize passed to the next eligible paid player — name both.",
   "pull_quote": "One vivid standalone sentence for a big pull quote",
-  "looking_ahead": "2-3 sentences. ONLY reference fixtures listed in upcoming_owned_fixtures. Name the sweepstake owners who have skin in the game. If upcoming_owned_fixtures is empty, comment on a standings battle instead. NEVER mention a fixture not in the data."
+  "looking_ahead": "{looking_ahead_desc}"
 }}
 
 RULES:
@@ -528,12 +588,14 @@ RULES:
 - Name sweepstake players when their teams do something notable
 - Use real scorelines only — never invent facts
 - NEVER reference a fixture, team, or scoreline not present in the DATA block
-- looking_ahead MUST only reference matches in upcoming_owned_fixtures — do not invent fixtures
+- looking_ahead: if tournament_complete is true, this is a CLOSING verdict — no fixtures, no future tense. Otherwise it MUST only reference matches in upcoming_owned_fixtures — do not invent fixtures
 - No repeated information across sections
 - player_spotlight must be the single most notable player from the data
 - image_subjects: list 2-3 subjects to generate AI artwork for (player names or team moments)
 - Tone: passionate tabloid football journalist
-- leaderboard_history is the ONLY source of truth for standings-over-time claims: leader_changes lists every time the #1 spot changed hands (date, new_leader, points, previous_leader); days_led_count tallies days spent at #1; fell_from_top3 lists players who were once top-3 (peak_rank/peak_date/peak_points) but have since dropped out (current_rank/current_points). If the ANGLE asks for a final recap or "how the top 3 won" / "who fell behind", build sections and sweepstake_digest around these exact facts — name specific dates and points, don't just assert someone "led for a while" without the data to back it.
+- leaderboard_history is the ONLY source of truth for standings-over-time claims: leader_changes lists every time the #1 spot changed hands (date, new_leader, points, previous_leader); days_led_count tallies days spent at #1; fell_from_top3 lists players who were once top-3 (peak_rank/peak_date/peak_points) but have since dropped out (current_rank/current_points).
+- If the ANGLE asks for a final recap or "how the top 3 won" / "who fell behind": dedicate ONE full section (title it something like "THE CHASE" or "HOW THEY FELL") entirely to leaderboard_history. Walk through leader_changes IN ORDER, citing the exact date and points for every handover (format: "Player led from DATE1 (PTS1 pts) until Player2 overtook them on DATE2 (PTS2 pts)"). For every entry in fell_from_top3, state their peak_rank/peak_date/peak_points versus current_rank/current_points, and give a specific reason from the data (captain bonus, prediction points, teams eliminated) — never write "led for a while" or "at some point" without citing the actual date and points from the data.
+- Give each of the CURRENT top 3 (current_standings[0:3]) their own sentence or two explaining specifically how they built their final total — reference their prediction bonus, captain bonus, or standout teams from the data, not just their final point total.
 """
 
     _models = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
@@ -732,23 +794,33 @@ def _render_newspaper(story: dict, meta: dict, context: dict, best_days: list) -
         unsafe_allow_html=True,
     )
 
-    # ── Prize pool + Top 3 ─────────────────────────────────────────────────
-    top3   = standings[:3]
+    # ── Prize pool + Top 3 (PAID-only — actual prize-money winners) ─────────
+    prize_winners = context.get("prize_winners")
+    if not prize_winners:
+        # Backward-compat: stories cached before prize_winners existed —
+        # compute it fresh rather than showing an empty podium.
+        try:
+            _pinfo = get_prize_pool()
+            _splits = [_pinfo.get("first_prize", 0), _pinfo.get("second_prize", 0), _pinfo.get("third_prize", 0)]
+            _plb = get_prize_leaderboard()
+            prize_winners = [
+                {"rank": i + 1, "player": str(row.get("Player", "")),
+                 "total_pts": round(float(row.get("TotalPoints", 0)), 1),
+                 "prize_eur": _splits[i] if i < 3 else 0}
+                for i, (_, row) in enumerate(_plb.iterrows())
+            ][:3]
+        except Exception:
+            prize_winners = []
     medals = ["🥇","🥈","🥉"]
     podium_parts = []
-    for i, s in enumerate(top3):
-        paid_badge = (
-            '<span style="background:#166534;color:white;font-size:0.55rem;'
-            'padding:1px 4px;border-radius:3px;margin-left:3px">PAID</span>'
-            if s.get("paid") else
-            f'<span style="background:{_RED};color:white;font-size:0.55rem;'
-            f'padding:1px 4px;border-radius:3px;margin-left:3px">UNPAID</span>'
-        )
+    for i, s in enumerate(prize_winners[:3]):
+        prize_eur = s.get("prize_eur", 0)
         podium_parts.append(
             f'<div style="text-align:center;flex:1;padding:0 0.5rem">'
             f'<div style="font-size:1.4rem">{medals[i]}</div>'
-            f'<div style="font-size:0.8rem;font-weight:700;color:{_INK}">{s["player"]}{paid_badge}</div>'
-            f'<div style="font-size:0.78rem;color:{_RED};font-weight:900">{s["total_pts"]} pts</div>'
+            f'<div style="font-size:0.8rem;font-weight:700;color:{_INK}">{s["player"]}</div>'
+            f'<div style="font-size:0.95rem;color:{_RED};font-weight:900">€{prize_eur:.2f}</div>'
+            f'<div style="font-size:0.68rem;color:{_MID}">{s["total_pts"]} pts</div>'
             f'</div>'
         )
     st.markdown(
@@ -762,7 +834,10 @@ def _render_newspaper(story: dict, meta: dict, context: dict, best_days: list) -
         f'</div>'
         f'<div style="flex:1;display:flex;justify-content:space-evenly">'
         f'{"".join(podium_parts)}'
-        f'</div></div></div>',
+        f'</div></div>'
+        f'<div style="font-size:0.62rem;color:{_MID};text-align:right;margin-top:0.3rem">'
+        f'Prize money · PAID players only</div>'
+        f'</div>',
         unsafe_allow_html=True,
     )
 
@@ -1068,15 +1143,16 @@ def _render_newspaper(story: dict, meta: dict, context: dict, best_days: list) -
             unsafe_allow_html=True,
         )
 
-    # ── Looking ahead ───────────────────────────────────────────────────────
+    # ── Looking ahead / final word ────────────────────────────────────────
     looking = story.get("looking_ahead","")
     if looking:
+        _label = "FINAL WORD" if context.get("tournament_complete") else "LOOKING AHEAD"
         _hr()
         st.markdown(
             f'<div style="font-family:Georgia,serif;background:white;'
             f'border-top:3px solid {_INK};padding:0.75rem 1rem">'
             f'<span style="font-size:0.62rem;font-weight:900;letter-spacing:0.14em;color:{_RED}">'
-            f'LOOKING AHEAD &nbsp;</span>'
+            f'{_label} &nbsp;</span>'
             f'<span style="font-size:0.9rem;color:{_MID}">{looking}</span>'
             f'</div>',
             unsafe_allow_html=True,
