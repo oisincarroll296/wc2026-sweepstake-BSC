@@ -12,6 +12,7 @@ from dashboard.data import (
     get_deadlines, countdown, get_tournament_results, get_match_stats,
 )
 from dashboard.components.ui import page_header, empty_state
+from src.scoring_engine import _normalize_pick
 
 
 page_header("Predictions Centre", "World Cup Winner · Runner-Up · Golden Boot · Dark Horse · More")
@@ -252,7 +253,7 @@ def _is_correct(choice: str, actual_key: str = "", dark_horse: bool = False) -> 
     if dark_horse:
         return bool(choice) and _round_reached_map.get(choice, "") in _DARK_HORSE_QUALIFYING
     actual = _ACTUAL.get(actual_key, "")
-    return bool(actual) and choice == actual
+    return bool(actual) and _normalize_pick(choice) == _normalize_pick(actual)
 
 
 def _pick_card(col, title: str, icon: str, picks: dict, bonus_label: str = "",

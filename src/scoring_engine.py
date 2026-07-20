@@ -1,11 +1,27 @@
 """Scoring engine for World Cup 2026 Sweepstake."""
 
+import unicodedata
 from pathlib import Path
 from typing import Optional
 
 import pandas as pd
 
 from src.team_database import load_teams
+
+
+def _normalize_pick(s: str) -> str:
+    """Normalize a prediction pick / actual result for comparison.
+
+    Casefolds and strips diacritics so free-text picks like Golden Boot
+    ("Mbappe" vs "Mbappé") match regardless of accents, plus collapses
+    whitespace — a player shouldn't lose real prize money to a missing
+    accent on a mobile keyboard.
+    """
+    if not s:
+        return ""
+    nfkd = unicodedata.normalize("NFKD", s)
+    stripped = "".join(c for c in nfkd if not unicodedata.combining(c))
+    return " ".join(stripped.casefold().split())
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -428,7 +444,7 @@ def calculate_prediction_points(
     predicted_winner = str(pred.get("WorldCupWinner", "") or "").strip()
     result["world_cup_winner"] = predicted_winner or None
     actual_winner = str(tournament_results.get("world_cup_winner", "") or "").strip()
-    if predicted_winner and predicted_winner == actual_winner:
+    if predicted_winner and _normalize_pick(predicted_winner) == _normalize_pick(actual_winner):
         result["winner_bonus"] = float(PREDICTION_WINNER_BONUS)
         result["total"] += result["winner_bonus"]
 
@@ -436,7 +452,7 @@ def calculate_prediction_points(
     predicted_ru = str(pred.get("RunnerUp", "") or "").strip()
     result["runner_up"] = predicted_ru or None
     actual_ru = str(tournament_results.get("runner_up", "") or "").strip()
-    if predicted_ru and predicted_ru == actual_ru:
+    if predicted_ru and _normalize_pick(predicted_ru) == _normalize_pick(actual_ru):
         result["runner_up_bonus"] = float(PREDICTION_RUNNER_UP_BONUS)
         result["total"] += result["runner_up_bonus"]
 
@@ -444,15 +460,16 @@ def calculate_prediction_points(
     predicted_bronze = str(pred.get("BronzeMedal", "") or "").strip()
     result["bronze_winner"] = predicted_bronze or None
     actual_bronze = str(tournament_results.get("bronze_winner", "") or "").strip()
-    if predicted_bronze and predicted_bronze == actual_bronze:
+    if predicted_bronze and _normalize_pick(predicted_bronze) == _normalize_pick(actual_bronze):
         result["bronze_bonus"] = float(PREDICTION_BRONZE_BONUS)
         result["total"] += result["bronze_bonus"]
 
-    # Golden Boot (+25)
+    # Golden Boot (+25) — free-text player name, most likely to have
+    # accent/case mismatches (e.g. "Mbappe" vs "Mbappé").
     predicted_gb = str(pred.get("GoldenBoot", "") or "").strip()
     result["golden_boot"] = predicted_gb or None
     actual_gb = str(tournament_results.get("golden_boot_winner", "") or "").strip()
-    if predicted_gb and predicted_gb == actual_gb:
+    if predicted_gb and _normalize_pick(predicted_gb) == _normalize_pick(actual_gb):
         result["golden_boot_bonus"] = float(PREDICTION_GOLDEN_BOOT_BONUS)
         result["total"] += result["golden_boot_bonus"]
 
@@ -475,7 +492,7 @@ def calculate_prediction_points(
     predicted_fko = str(pred.get("FirstKnockedOut", "") or "").strip()
     result["first_knocked_out"] = predicted_fko or None
     actual_fko = str(tournament_results.get("first_knocked_out", "") or "").strip()
-    if predicted_fko and actual_fko and predicted_fko == actual_fko:
+    if predicted_fko and actual_fko and _normalize_pick(predicted_fko) == _normalize_pick(actual_fko):
         result["first_ko_bonus"] = float(PREDICTION_FIRST_KO_BONUS)
         result["total"] += result["first_ko_bonus"]
 
