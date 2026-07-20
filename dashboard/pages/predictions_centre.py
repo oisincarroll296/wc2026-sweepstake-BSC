@@ -9,7 +9,7 @@ import pandas as pd
 from dashboard.data import (
     get_predictions_centre_data, is_predictions_locked,
     get_predictions, get_participants, get_purchases,
-    get_deadlines, countdown,
+    get_deadlines, countdown, get_tournament_results, get_match_stats,
 )
 from dashboard.components.ui import page_header, empty_state
 
@@ -222,8 +222,41 @@ if not data or preds_df.empty:
     empty_state("No predictions submitted.")
     st.stop()
 
+# Actual results — used to highlight correct picks in green. Empty strings
+# (tournament still in progress) simply never match, so nothing lights up
+# until results are actually in.
+_tr = get_tournament_results()
+_ms_pc = get_match_stats()
+_round_reached_map: dict[str, str] = {}
+_first_knocked_out = ""
+if not _ms_pc.empty:
+    _round_reached_map = {
+        str(r["Team"]): str(r.get("RoundReached", "") or "") for _, r in _ms_pc.iterrows()
+    }
+    if "FirstEliminated" in _ms_pc.columns:
+        _fko_rows = _ms_pc[pd.to_numeric(_ms_pc["FirstEliminated"], errors="coerce").fillna(0).astype(int) == 1]
+        if not _fko_rows.empty:
+            _first_knocked_out = str(_fko_rows.iloc[0]["Team"])
 
-def _pick_card(col, title: str, icon: str, picks: dict, bonus_label: str = ""):
+_ACTUAL = {
+    "world_cup_winner": str(_tr.get("world_cup_winner", "") or ""),
+    "runner_up":        str(_tr.get("runner_up", "") or ""),
+    "bronze_winner":    str(_tr.get("bronze_winner", "") or ""),
+    "golden_boot":      str(_tr.get("golden_boot_winner", "") or ""),
+    "first_knocked_out": _first_knocked_out,
+}
+_DARK_HORSE_QUALIFYING = {"R32", "R16", "QF", "SF", "Final", "Winner"}
+
+
+def _is_correct(choice: str, actual_key: str = "", dark_horse: bool = False) -> bool:
+    if dark_horse:
+        return bool(choice) and _round_reached_map.get(choice, "") in _DARK_HORSE_QUALIFYING
+    actual = _ACTUAL.get(actual_key, "")
+    return bool(actual) and choice == actual
+
+
+def _pick_card(col, title: str, icon: str, picks: dict, bonus_label: str = "",
+                actual_key: str = "", dark_horse: bool = False):
     with col:
         label = f"{icon} {title}"
         if bonus_label:
@@ -238,9 +271,16 @@ def _pick_card(col, title: str, icon: str, picks: dict, bonus_label: str = ""):
         for choice, players in sorted(picks.items(), key=lambda x: -len(x[1])):
             count = len(players)
             players_str = ", ".join(sorted(players))
+            correct = _is_correct(choice, actual_key, dark_horse)
+            card_style = (
+                "border:2px solid #22C55E;background:rgba(34,197,94,0.1)" if correct else ""
+            )
+            check = (
+                ' <span style="color:#22C55E;font-weight:700">✓ Correct</span>' if correct else ""
+            )
             st.markdown(
-                f'<div class="card" style="margin-bottom:0.4rem">'
-                f'<p style="margin:0;font-weight:600;color:#F5F5F5">{choice}</p>'
+                f'<div class="card" style="margin-bottom:0.4rem;{card_style}">'
+                f'<p style="margin:0;font-weight:600;color:#F5F5F5">{choice}{check}</p>'
                 f'<p style="margin:0.1rem 0 0;color:#9CA3AF;font-size:0.8rem">'
                 f'{players_str} ({count})</p>'
                 f'</div>',
@@ -250,23 +290,56 @@ def _pick_card(col, title: str, icon: str, picks: dict, bonus_label: str = ""):
 
 # Row 1: tournament placings
 col1, col2, col3 = st.columns(3)
-_pick_card(col1, "World Cup Winner", "🏆", data.get("world_cup_winner", {}), "+30 pts")
-_pick_card(col2, "Runner-Up",        "🥈", data.get("runner_up", {}),        "+20 pts")
-_pick_card(col3, "Bronze Medal",     "🥉", data.get("bronze_winner", {}),    "+15 pts")
+_pick_card(col1, "World Cup Winner", "🏆", data.get("world_cup_winner", {}), "+30 pts",
+           actual_key="world_cup_winner")
+_pick_card(col2, "Runner-Up",        "🥈", data.get("runner_up", {}),        "+20 pts",
+           actual_key="runner_up")
+_pick_card(col3, "Bronze Medal",     "🥉", data.get("bronze_winner", {}),    "+15 pts",
+           actual_key="bronze_winner")
 
 st.divider()
 
 # Row 2: individual & special
 col4, col5, col6 = st.columns(3)
-_pick_card(col4, "Golden Boot",      "👟", data.get("golden_boot", {}),      "+25 pts")
-_pick_card(col5, "Dark Horse",       "🌟", data.get("dark_horse", {}),       "+5→15→30→60→100→150 pts")
-_pick_card(col6, "First Knocked Out","💀", data.get("first_knocked_out", {}), "+20 pts")
+_pick_card(col4, "Golden Boot",      "👟", data.get("golden_boot", {}),      "+25 pts",
+           actual_key="golden_boot")
+_pick_card(col5, "Dark Horse",       "🌟", data.get("dark_horse", {}),       "+5→15→30→60→100→150 pts",
+           dark_horse=True)
+_pick_card(col6, "First Knocked Out","💀", data.get("first_knocked_out", {}), "+20 pts",
+           actual_key="first_knocked_out")
 
 st.divider()
 st.subheader("All Picks")
+st.caption("🟢 Green = correct pick")
 if not preds_df.empty:
     _display_cols = [c for c in [
         "Player", "WorldCupWinner", "RunnerUp", "BronzeMedal",
         "GoldenBoot", "DarkHorse", "FirstKnockedOut",
     ] if c in preds_df.columns]
-    st.dataframe(preds_df[_display_cols], use_container_width=True, hide_index=True)
+    _disp_df = preds_df[_display_cols].copy()
+
+    _COL_TO_ACTUAL_KEY = {
+        "WorldCupWinner": "world_cup_winner", "RunnerUp": "runner_up",
+        "BronzeMedal": "bronze_winner", "GoldenBoot": "golden_boot",
+        "FirstKnockedOut": "first_knocked_out",
+    }
+
+    def _style_pred_row(row):
+        styles = []
+        for col in row.index:
+            if col == "DarkHorse":
+                ok = _is_correct(str(row[col]), dark_horse=True)
+            elif col in _COL_TO_ACTUAL_KEY:
+                ok = _is_correct(str(row[col]), actual_key=_COL_TO_ACTUAL_KEY[col])
+            else:
+                ok = False
+            styles.append(
+                "background-color: rgba(34,197,94,0.22); color: #22C55E; font-weight: 700"
+                if ok else ""
+            )
+        return styles
+
+    st.dataframe(
+        _disp_df.style.apply(_style_pred_row, axis=1),
+        use_container_width=True, hide_index=True,
+    )

@@ -11,7 +11,7 @@ from dashboard.data import (
     get_participants, get_assignments, get_match_stats, get_purchases,
     get_captains, get_predictions, get_statuses, get_tier_map,
     get_events, is_predictions_locked, get_goals_conceded_map, get_swap_offsets,
-    get_eliminated_teams,
+    get_eliminated_teams, get_tournament_results,
 )
 from dashboard.config import TIER_COLORS, PLOTLY_LAYOUT
 from dashboard.components.ui import page_header, empty_state, tier_badge
@@ -67,7 +67,8 @@ swap_offsets  = get_swap_offsets()
 eff   = get_effective_teams(player, assignments, scoring_purch)
 result = calculate_player_points(
     player, assignments, match_stats, scoring_purch,
-    captains, predictions, tier_map=tier_map, swap_offsets=swap_offsets,
+    captains, predictions, tournament_results=get_tournament_results(),
+    tier_map=tier_map, swap_offsets=swap_offsets,
 )
 
 # Payment status
@@ -649,7 +650,8 @@ h2h_opponent  = st.selectbox("Compare against", other_players, key="h2h_opponent
 if h2h_opponent:
     h2h_result = calculate_player_points(
         h2h_opponent, assignments, match_stats, scoring_purch,
-        captains, predictions, tier_map=tier_map, swap_offsets=swap_offsets,
+        captains, predictions, tournament_results=get_tournament_results(),
+        tier_map=tier_map, swap_offsets=swap_offsets,
     )
     h2h_eff        = get_effective_teams(h2h_opponent, assignments, scoring_purch)
     h2h_teams      = list(dict.fromkeys(h2h_eff["group_stage"] + h2h_eff["knockout"]))
